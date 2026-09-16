@@ -1,0 +1,90 @@
+📝 Kafka — Quick Revision
+
+Apache Kafka is a distributed event-streaming platform used for asynchronous communication between services.
+
+Instead of one service directly calling another service, a service can publish an event to Kafka, and another service can consume that event whenever it is ready.
+
+Important terms
+Producer → service that publishes events
+Consumer → service that reads/events processes them
+Topic → named stream/category where events are published
+Event/Message → actual information being sent
+
+========================================================================================
+🏗️ Core Architecture
+Kafka works like a highly scalable, fault-tolerant log. Its main components are:
+
+Producers: Applications that publish (write) data to Kafka.
+
+Topics: Categories or feeds where records are stored. A topic can have many producers and consumers.
+
+Partitions: Topics are split into partitions to allow for parallel processing and scaling across multiple servers.
+
+Brokers: The servers that make up a Kafka cluster. They store the data and handle requests.
+
+Consumers: Applications that subscribe to topics and read the data.
+
+Offsets: Each record within a partition gets a unique, sequential ID, allowing consumers to track exactly where they are in the stream
+
+====================================================================================================
+
+How we're using Kafka
+
+Our project is a Distributed Logistics Orchestration Platform.
+
+The services communicate through Kafka:
+
+Inventory Service
+       │
+       │ INVENTORY_RESERVED
+       ▼
+     Kafka
+       │
+       ▼
+Warehouse Service
+       │
+       │ PACKAGE_READY
+       ▼
+     Kafka
+       │
+       ▼
+Carrier Selection
+       │
+       │ CARRIER_SELECTED
+       ▼
+     Kafka
+       │
+       ▼
+Shipment Service
+
+For example, when Inventory successfully reserves 30 units, it publishes:
+
+{
+  "event": "INVENTORY_RESERVED",
+  "inventoryId": "...",
+  "productId": "...",
+  "warehouseId": "...",
+  "quantity": 30
+}
+
+The Warehouse Service consumes this event and starts its warehouse-processing workflow.
+
+Why Kafka instead of direct API calls?
+
+With direct communication:
+
+Inventory ─────HTTP─────> Warehouse
+
+Inventory becomes dependent on Warehouse being available.
+
+With Kafka:
+
+Inventory ──> Kafka ──> Warehouse
+
+Inventory can publish the event without needing Warehouse to process it immediately.
+
+This gives us asynchronous, loosely coupled communication, which is one of the important ideas we're demonstrating in this distributed-systems project.
+
+🔑 One-line revision
+
+Kafka is the event-driven communication layer of our logistics platform: services publish events to Kafka topics, and other services consume those events asynchronously.

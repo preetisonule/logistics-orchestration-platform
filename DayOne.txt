@@ -1,0 +1,15 @@
+Today I built the foundation of my Distributed Logistics Platform and implemented my first Kafka event flow.
+
+- Set up PostgreSQL + Prisma for the Inventory Service.
+- Designed Product, Warehouse, and Inventory models.
+- Built inventory creation and reservation APIs.
+- Made inventory reservation atomic to prevent race conditions.
+- Set up Apache Kafka using Docker.
+- Created the inventory-events Kafka topic.
+- Connected the Inventory Service to Kafka using KafkaJS.
+- Successfully published and verified our first real event:
+- INVENTORY_RESERVED.
+
+Today’s key learning:
+
+Inventory Service → Kafka Producer → inventory-events topic → eventually Warehouse Consumer

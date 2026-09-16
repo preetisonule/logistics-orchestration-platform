@@ -1,0 +1,165 @@
+1. 📦 Inventory Service — “Do we have the stock?”
+
+Its only concern is inventory.
+
+Responsibilities:
+
+Maintain how much stock exists at each warehouse.
+Check whether an item is available.
+Reserve stock for an order.
+Release reserved stock if an order is cancelled.
+Increase/decrease stock when inventory changes.
+Tell other services whether reservation succeeded or failed.
+
+Example:
+
+Order needs 2 iPhones.
+
+Inventory Service checks:
+Warehouse A → 5 available
+Warehouse B → 0 available
+It reserves 2 from Warehouse A.
+
+Output/event:
+
+INVENTORY_RESERVED
+warehouse = A
+quantity = 2
+
+It does NOT decide:
+
+how the item should be picked
+which courier should deliver it
+how the shipment is tracked
+
+===========================================================================
+
+2. 🏭 Warehouse Service — “How do we physically process the package?”
+
+Its concern is warehouse operations.
+
+Responsibilities:
+
+Know which warehouse needs to process an order.
+Create picking tasks.
+Assign/track warehouse tasks.
+Track picking.
+Track packing.
+Mark package as ready for dispatch.
+Maintain warehouse/task status.
+
+Example:
+
+Inventory says:
+"2 iPhones reserved at Warehouse A"
+
+        ↓
+
+Warehouse Service
+
+        ↓
+
+Create:
+PICK_TASK #102
+→ Pick 2 iPhones from Warehouse A
+
+        ↓
+
+Items picked
+
+        ↓
+
+Package packed
+
+        ↓
+
+PACKAGE_READY
+
+It does NOT:
+
+manage stock quantities
+choose the courier
+create the final shipment
+
+==============================================================
+
+3. 🚚 Carrier Selection Engine — “Which courier should we use?”
+
+This one is different.
+
+It is primarily a decision-making service.
+
+It receives information such as:
+
+Origin: Pune
+Destination: Mumbai
+Weight: 2 kg
+Delivery requirement: 2 days
+
+Then considers available carriers:
+
+Delhivery
+Blue Dart
+DTDC
+...
+
+and applies our business rules.
+
+For example:
+
+IF delivery_time <= 2 days
+AND cost < ₹200
+AND carrier serves destination
+→ eligible
+
+Then it produces:
+
+CARRIER_SELECTED
+
+carrier = Delhivery
+
+Its responsibility is selection, not shipment management.
+
+It does NOT:
+
+maintain inventory
+pick packages
+track shipments
+create warehouse tasks
+
+==========================================================================
+
+4. 🚛 Shipment Service — “Manage the shipment after a carrier is chosen”
+
+Once the carrier is selected, Shipment Service takes over.
+
+Responsibilities:
+
+Create a shipment.
+Generate/maintain shipment ID.
+Associate shipment with the order/package.
+Store carrier information.
+Store tracking information.
+Maintain shipment status.
+Track shipment lifecycle.
+
+Example:
+
+CARRIER_SELECTED
+        ↓
+Shipment Service
+        ↓
+Create SHIPMENT-7821
+        ↓
+Carrier: Delhivery
+Tracking ID: DL123456
+        ↓
+Status: CREATED
+        ↓
+PICKED_UP
+        ↓
+IN_TRANSIT
+        ↓
+OUT_FOR_DELIVERY
+        ↓
+DELIVERED

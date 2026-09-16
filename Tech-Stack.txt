@@ -1,0 +1,13 @@
+| Layer                   | Technology           | Purpose                            |
+| ------------------------| ---------------------| ---------------------------------- |
+| Language                | TypeScript           | Type-safe backend development      |
+| Runtime                 | Node.js              | Runs our services                  |
+| API framework           | Express.js           | REST APIs                          |
+| Event Bus               | Apache Kafka         | Communication between services     |
+| Database                | PostgreSQL           | Persistent service data            |
+| Database access         | Prisma ORM           | Type-safe DB queries               |
+| Containerization        | Docker               | Run services independently         |
+| API testing             | Postman              | Test APIs/events                   |
+| Build/package manager   | npm                  | Dependencies & scripts             |
+| Version control         | Git + GitHub         | Source control                     |
+| Frontend                | React + TypeScript   | Later, for an operations dashboard |
