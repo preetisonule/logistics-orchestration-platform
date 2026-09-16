@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  name        String
+  sku         String      @unique
+  createdAt   DateTime    @default(now())
+
+  inventories Inventory[]
+}
+
+model Warehouse {
+  id          String      @id @default(uuid())
+  name        String
+  location    String
+  createdAt   DateTime    @default(now())
+
+  inventories Inventory[]
+}
+
+model Inventory {
+  id               String    @id @default(uuid())
+  productId        String
+  warehouseId      String
+  totalQuantity    Int       @default(0)
+  reservedQuantity Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@unique([productId, warehouseId])
+}
