@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Shipment {
+  id            String   @id @default(uuid())
+  trackingNumber String  @unique
+
+  taskId        String
+  productId     String
+  warehouseId   String
+  quantity      Int
+
+  carrier       String
+  serviceLevel  String
+  weight        Float
+
+  status        String   @default("CREATED")
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

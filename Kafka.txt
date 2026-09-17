@@ -88,3 +88,8 @@ This gives us asynchronous, loosely coupled communication, which is one of the i
 🔑 One-line revision
 
 Kafka is the event-driven communication layer of our logistics platform: services publish events to Kafka topics, and other services consume those events asynchronously.
+=========================================================================================================================
+🔑 Kafka consumer : Lock this in:
+
+Same group = share the work
+Different groups = each gets the even
