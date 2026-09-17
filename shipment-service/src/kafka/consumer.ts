@@ -1,4 +1,6 @@
+
 import { Kafka } from "kafkajs";
+
 import { prisma } from "../lib/prisma.js";
 
 const kafka = new Kafka({
@@ -32,13 +34,17 @@ export async function startConsumer() {
 
       console.log("📨 Carrier event received:", event);
 
-      if (event.event !== "CARRIER_SELECTED") {
+      // Handle CARRIER_SELECTED event
+      if (event.eventType !== "CARRIER_SELECTED") {
         return;
       }
 
+      const data = event.data;
+
+      // Idempotency check
       const existingShipment = await prisma.shipment.findFirst({
         where: {
-          taskId: event.taskId,
+          taskId: data.taskId,
         },
       });
 
@@ -55,13 +61,13 @@ export async function startConsumer() {
       const shipment = await prisma.shipment.create({
         data: {
           trackingNumber,
-          taskId: event.taskId,
-          productId: event.productId,
-          warehouseId: event.warehouseId,
-          quantity: event.quantity,
-          carrier: event.carrier,
-          serviceLevel: event.serviceLevel,
-          weight: event.weight,
+          taskId: data.taskId,
+          productId: data.productId,
+          warehouseId: data.warehouseId,
+          quantity: data.quantity,
+          carrier: data.carrier,
+          serviceLevel: data.serviceLevel,
+          weight: data.weight,
           status: "CREATED",
         },
       });
@@ -70,3 +76,4 @@ export async function startConsumer() {
     },
   });
 }
+

@@ -1,0 +1,60 @@
+
+### 🚀 What we did today
+
+**1. Completed Phase 2 of the Distributed Logistics Platform**
+
+* Added **Transactional Outbox Pattern** to Inventory Service.
+* Inventory reservation + event creation now happen in the same DB transaction.
+* Built an **Outbox Publisher** that sends pending events to Kafka and retries failed publishing.
+
+**2. Standardized Event Contracts**
+We moved from simple Kafka messages to structured events containing:
+
+* `eventId`
+* `eventType`
+* `version`
+* `occurredAt`
+* `data`
+
+So the services now communicate using a proper event contract.
+
+**3. Updated the complete Kafka pipeline**
+
+
+Inventory
+    ↓ INVENTORY_RESERVED
+Kafka
+    ↓
+Warehouse
+    ↓ PACKAGE_READY
+Kafka
+    ↓
+Carrier Selection
+    ↓ CARRIER_SELECTED
+Kafka
+    ↓
+Shipment
+
+**4. Added Idempotency**
+
+* Shipment uses `taskId` as a unique identifier.
+* Duplicate `CARRIER_SELECTED` events won't create duplicate shipments.
+
+**5. Added basic reliability handling**
+
+* Outbox retry behavior
+* Atomic inventory reservation
+* Duplicate-event protection in Shipment
+* Proper event validation/handling
+
+**6. Verified the system**
+We actually tested the event flow rather than just writing code:
+
+* Inventory reservation ✅
+* Outbox event created ✅
+* Kafka event published ✅
+* Warehouse task created ✅
+* Warehouse → `PACKAGE_READY` ✅
+* Carrier selected ✅
+* Shipment created ✅
+

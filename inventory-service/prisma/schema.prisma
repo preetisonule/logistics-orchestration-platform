@@ -39,3 +39,12 @@ model Inventory {
 
   @@unique([productId, warehouseId])
 }
+
+model OutboxEvent {
+  id          String   @id @default(uuid())
+  eventType   String
+  payload     String
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  publishedAt DateTime?
+}

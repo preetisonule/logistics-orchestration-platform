@@ -1,5 +1,6 @@
-import "dotenv/config";
+
 import { Kafka } from "kafkajs";
+import { randomUUID } from "crypto";
 
 const kafka = new Kafka({
   clientId: "carrier-selection-service",
@@ -13,9 +14,10 @@ const consumer = kafka.consumer({
 const producer = kafka.producer();
 
 /*
-  Available carriers.
-  Later these could come from a database/config service.
-*/
+ * Available carriers.
+ * Later these could come from a database/config service.
+ */
+
 const carriers = [
   {
     name: "DELHIVERY",
@@ -35,8 +37,9 @@ const carriers = [
 ];
 
 /*
-  Carrier selection logic.
-*/
+ * Carrier selection logic.
+ */
+
 function selectCarrier(weight: number, sla: string) {
   const eligibleCarriers = carriers.filter(
     (carrier) =>
@@ -51,20 +54,22 @@ function selectCarrier(weight: number, sla: string) {
   }
 
   /*
-    Simple deterministic rule:
-    choose the first eligible carrier.
-    
-    We can make this smarter later using:
-    - price
-    - delivery time
-    - carrier reliability
-    - destination coverage
-  */
+   * Simple deterministic rule:
+   * choose the first eligible carrier.
+   *
+   * We can make this smarter later using:
+   * - price
+   * - delivery time
+   * - carrier reliability
+   * - destination coverage
+   */
+
   return eligibleCarriers[0];
 }
 
 async function start() {
   await producer.connect();
+
   await consumer.connect();
 
   await consumer.subscribe({
@@ -82,15 +87,19 @@ async function start() {
 
       console.log("📦 Event received:", event);
 
-      if (event.event !== "PACKAGE_READY") {
+      // Handle PACKAGE_READY event
+      if (event.eventType !== "PACKAGE_READY") {
         return;
       }
 
+      const data = event.data;
+
       /*
-        For now, we use sample shipment properties.
-        Later Shipment Service / Order Service will provide
-        actual destination, weight and SLA.
-      */
+       * For now, we use sample shipment properties.
+       * Later Shipment Service / Order Service will provide
+       * actual destination, weight and SLA.
+       */
+
       const weight = 2;
       const sla = "EXPRESS";
 
@@ -98,22 +107,27 @@ async function start() {
 
       console.log("🚚 Carrier selected:", carrier.name);
 
+      const carrierEvent = {
+        eventId: randomUUID(),
+        eventType: "CARRIER_SELECTED",
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        data: {
+          taskId: data.taskId,
+          productId: data.productId,
+          warehouseId: data.warehouseId,
+          quantity: data.quantity,
+          carrier: carrier.name,
+          serviceLevel: sla,
+          weight,
+        },
+      };
+
       await producer.send({
         topic: "carrier-events",
         messages: [
           {
-            value: JSON.stringify({
-              event: "CARRIER_SELECTED",
-
-              taskId: event.taskId,
-              productId: event.productId,
-              warehouseId: event.warehouseId,
-              quantity: event.quantity,
-
-              carrier: carrier.name,
-              serviceLevel: sla,
-              weight,
-            }),
+            value: JSON.stringify(carrierEvent),
           },
         ],
       });

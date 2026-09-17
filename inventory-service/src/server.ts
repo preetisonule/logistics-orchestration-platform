@@ -5,6 +5,7 @@ import productRoutes from "./routes/product.routes.js";
 import warehouseRoutes from "./routes/warehouse.routes.js";
 import inventoryRoutes from "./routes/inventory.routes.js";
 import { connectProducer } from "./kafka/producer.js";
+import { startOutboxPublisher } from "./kafka/outbox-publisher.js";
 
 
 const app = express();
@@ -38,6 +39,8 @@ const PORT = 3000;
 
 async function startServer() {
   await connectProducer();
+
+  startOutboxPublisher();
 
   app.listen(PORT, () => {
     console.log(`Inventory Service running on port ${PORT}`);

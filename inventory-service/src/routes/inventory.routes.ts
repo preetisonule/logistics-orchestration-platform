@@ -1,6 +1,6 @@
 import { Router } from "express";
+import { createEvent } from "../events/event.js";
 import { prisma } from "../lib/prisma.js";
-import { publishInventoryReserved } from "../kafka/producer.js";
 
 const router = Router();
 
@@ -19,7 +19,6 @@ router.post("/", async (req, res) => {
     res.status(201).json(inventory);
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       message: "Failed to create inventory",
     });
@@ -33,7 +32,6 @@ router.get("/", async (req, res) => {
     res.status(200).json(inventory);
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       message: "Failed to fetch inventory",
     });
@@ -56,51 +54,79 @@ router.post("/:id/reserve", async (req, res) => {
       });
     }
 
-    // Atomically reserve inventory
-    const result = await prisma.$executeRaw`
-      UPDATE "Inventory"
-      SET "reservedQuantity" = "reservedQuantity" + ${quantity}
-      WHERE "id" = ${id}
-        AND "totalQuantity" - "reservedQuantity" >= ${quantity}
-    `;
+    // Reserve inventory + create outbox event in ONE transaction
+    const updatedInventory = await prisma.$transaction(async (tx) => {
+      // Atomically reserve inventory
+      const result = await tx.$executeRaw`
+        UPDATE "Inventory"
+        SET "reservedQuantity" = "reservedQuantity" + ${quantity}
+        WHERE "id" = ${id}
+          AND "totalQuantity" - "reservedQuantity" >= ${quantity}
+      `;
 
-    // No row updated = either inventory doesn't exist
-    // or there wasn't enough available inventory
-    if (result === 0) {
-      const inventory = await prisma.inventory.findUnique({
+      // No row updated = either inventory doesn't exist
+      // or there wasn't enough available inventory
+      if (result === 0) {
+        const inventory = await tx.inventory.findUnique({
+          where: {
+            id,
+          },
+        });
+
+        if (!inventory) {
+          throw new Error("INVENTORY_NOT_FOUND");
+        }
+
+        throw new Error("INSUFFICIENT_INVENTORY");
+      }
+
+      // Fetch updated inventory
+      const inventory = await tx.inventory.findUnique({
         where: {
           id,
         },
       });
 
       if (!inventory) {
+        throw new Error("INVENTORY_NOT_FOUND");
+      }
+
+      // Create event payload
+      const event = createEvent("INVENTORY_RESERVED", {
+        inventoryId: inventory.id,
+        productId: inventory.productId,
+        warehouseId: inventory.warehouseId,
+        quantity,
+      });
+
+      // Store event in Outbox
+      await tx.outboxEvent.create({
+        data: {
+          eventType: "INVENTORY_RESERVED",
+          payload: JSON.stringify(event),
+        },
+      });
+
+      return inventory;
+    });
+
+    return res.status(200).json(updatedInventory);
+  } catch (error) {
+    console.error(error);
+
+    if (error instanceof Error) {
+      if (error.message === "INVENTORY_NOT_FOUND") {
         return res.status(404).json({
           message: "Inventory not found",
         });
       }
 
-      return res.status(400).json({
-        message: "Insufficient inventory",
-      });
+      if (error.message === "INSUFFICIENT_INVENTORY") {
+        return res.status(400).json({
+          message: "Insufficient inventory",
+        });
+      }
     }
-
-    // Fetch the updated record
-    const updatedInventory = await prisma.inventory.findUnique({
-  where: {
-    id,
-  },
-});
-
-await publishInventoryReserved({
-  inventoryId: updatedInventory!.id,
-  productId: updatedInventory!.productId,
-  warehouseId: updatedInventory!.warehouseId,
-  quantity,
-});
-
-return res.status(200).json(updatedInventory);
-  } catch (error) {
-    console.error(error);
 
     return res.status(500).json({
       message: "Failed to reserve inventory",

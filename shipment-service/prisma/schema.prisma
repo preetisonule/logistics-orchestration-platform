@@ -11,7 +11,8 @@ model Shipment {
   id            String   @id @default(uuid())
   trackingNumber String  @unique
 
-  taskId        String
+  
+  taskId String @unique
   productId     String
   warehouseId   String
   quantity      Int

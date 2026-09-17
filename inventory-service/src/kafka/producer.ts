@@ -31,5 +31,4 @@ export async function publishInventoryReserved(data: {
     ],
   });
 
-  console.log("INVENTORY_RESERVED event published");
-}
+  console.log("INVENTORY_RESERVED event published");}
