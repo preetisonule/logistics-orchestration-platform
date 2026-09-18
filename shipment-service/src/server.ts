@@ -7,7 +7,7 @@ const app = express();
 
 app.use(express.json());
 
-const PORT = 3004;
+const PORT = Number(process.env.PORT);
 
 app.get("/shipments", async (_req, res) => {
   const shipments = await prisma.shipment.findMany({

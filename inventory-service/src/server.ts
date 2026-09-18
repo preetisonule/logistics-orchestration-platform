@@ -35,7 +35,7 @@ app.get("/", async (req, res) => {
   }
 });
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT);
 
 async function startServer() {
   await connectProducer();

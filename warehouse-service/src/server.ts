@@ -11,13 +11,13 @@ import { prisma } from "./lib/prisma.js";
 
 const app = express();
 
-const PORT = 3002;
+const PORT = Number(process.env.PORT);
 
 app.use(express.json());
 
 const kafka = new Kafka({
   clientId: "warehouse-service",
-  brokers: ["localhost:9092"],
+  brokers: [process.env.KAFKA_BROKER!],
 });
 
 const consumer = kafka.consumer({

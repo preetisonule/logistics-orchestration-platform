@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma.js";
 
 const kafka = new Kafka({
   clientId: "shipment-service",
-  brokers: ["localhost:9092"],
+  brokers: [process.env.KAFKA_BROKER!],
 });
 
 const consumer = kafka.consumer({

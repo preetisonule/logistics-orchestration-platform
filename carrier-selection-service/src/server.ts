@@ -1,10 +1,11 @@
 
+import "dotenv/config";
 import { Kafka } from "kafkajs";
 import { randomUUID } from "crypto";
 
 const kafka = new Kafka({
   clientId: "carrier-selection-service",
-  brokers: ["localhost:9092"],
+  brokers: [process.env.KAFKA_BROKER!],
 });
 
 const consumer = kafka.consumer({
