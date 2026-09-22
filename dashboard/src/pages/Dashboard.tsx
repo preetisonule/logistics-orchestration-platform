@@ -1,6 +1,6 @@
-import { Alert, Grid } from "@mui/material";
-import { Boxes, PackageCheck, Truck, Warehouse } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Box, Grid, Typography } from "@mui/material";
+import { Boxes, PackageCheck, RefreshCw, Truck, Warehouse } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchInventory } from "../api/inventoryApi";
 import { fetchShipments } from "../api/shipmentApi";
 import { fetchWarehouseTasks } from "../api/warehouseApi";
@@ -10,7 +10,8 @@ import { MetricCard } from "../components/dashboard/MetricCard";
 import { ShipmentPipeline } from "../components/dashboard/ShipmentPipeline";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
-import { getMockRecentActivity } from "../services/activityService";
+import { fetchEvents } from "../services/eventService";
+import { mapEventsToActivity, type ActivityItem } from "../services/activityService";
 
 type LoadState = "loading" | "success" | "error";
 
@@ -22,18 +23,26 @@ export function DashboardPage() {
   const [activeShipments, setActiveShipments] = useState(0);
   const [deliveredShipments, setDeliveredShipments] = useState(0);
   const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
 
-  const activities = useMemo(() => getMockRecentActivity(), []);
+  const isFetchingRef = useRef(false);
 
-  const loadDashboard = useCallback(async () => {
-    setLoadState("loading");
-    setErrorMessage("");
+  const loadDashboardData = useCallback(async (isInitial = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
+    if (isInitial) {
+      setLoadState("loading");
+      setErrorMessage("");
+    }
 
     try {
-      const [inventory, tasks, shipments] = await Promise.all([
+      const [inventory, tasks, shipments, rawEvents] = await Promise.all([
         fetchInventory(),
         fetchWarehouseTasks(),
         fetchShipments(),
+        fetchEvents({ limit: 10 }),
       ]);
 
       setInventoryCount(inventory.length);
@@ -58,35 +67,52 @@ export function DashboardPage() {
             shipment.status === "IN_TRANSIT" ||
             shipment.status === "OUT_FOR_DELIVERY",
         ).length,
-        delivered: deliveredCount(shipments),
+        delivered: shipments.filter((shipment) => shipment.status === "DELIVERED").length,
       });
 
+      setActivities(mapEventsToActivity(rawEvents));
+      setLastUpdated(new Date().toLocaleTimeString());
       setLoadState("success");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "Failed to load dashboard metrics."));
-      setLoadState("error");
+      if (isInitial) {
+        setErrorMessage(getErrorMessage(error, "Failed to load dashboard metrics."));
+        setLoadState("error");
+      }
+    } finally {
+      isFetchingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    void loadDashboardData(true);
+
+    // Non-overlapping periodic live polling (every 8s)
+    const interval = setInterval(() => {
+      void loadDashboardData(false);
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [loadDashboardData]);
 
   if (loadState === "loading") {
-    return <LoadingState message="Loading dashboard metrics..." />;
+    return <LoadingState message="Loading live operational metrics..." />;
   }
 
   if (loadState === "error") {
     return (
-      <ErrorState message={errorMessage} onRetry={() => void loadDashboard()} />
+      <ErrorState message={errorMessage} onRetry={() => void loadDashboardData(true)} />
     );
   }
 
   return (
     <>
-      <Alert severity="info" sx={{ mb: 3 }}>
-        Metric cards and pipeline counts are derived from live service APIs. Recent
-        activity is illustrative until an Event API is available.
+      <Alert severity="success" sx={{ mb: 3 }} action={
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
+          <RefreshCw size={14} style={{ animation: isFetchingRef.current ? "spin 1s linear infinite" : "none" }} />
+          <Typography variant="caption">Updated {lastUpdated}</Typography>
+        </Box>
+      }>
+        Live Dashboard connected to Microservice REST APIs & Event Store Service. Metrics auto-refresh periodically.
       </Alert>
 
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
@@ -134,10 +160,4 @@ export function DashboardPage() {
       </Grid>
     </>
   );
-}
-
-function deliveredCount(
-  shipments: Awaited<ReturnType<typeof fetchShipments>>,
-): number {
-  return shipments.filter((shipment) => shipment.status === "DELIVERED").length;
 }

@@ -1,0 +1,32 @@
+{
+  "name": "event-service",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Event store and observability service for logistics orchestration platform",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "tsx --test src/__tests__/*.test.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "dotenv": "^18.0.0",
+    "express": "^5.2.1",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.23.0",
+    "prisma": "^7.10.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.3",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

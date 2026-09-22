@@ -1,79 +1,148 @@
-
 import { Kafka } from "kafkajs";
-
+import randomBytes from "crypto";
 import { prisma } from "../lib/prisma.js";
+import { createEvent, isValidEventEnvelope } from "../events/event.js";
 
 const kafka = new Kafka({
   clientId: "shipment-service",
-  brokers: [process.env.KAFKA_BROKER!],
+  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
 });
 
-const consumer = kafka.consumer({
+export const consumer = kafka.consumer({
   groupId: "shipment-service-group",
 });
 
-function generateTrackingNumber() {
-  return `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+export function generateTrackingNumber(): string {
+  const hex = randomBytes.randomBytes(4).toString("hex").toUpperCase();
+  return `LOG-2026-${hex}`;
 }
 
 export async function startConsumer() {
   await consumer.connect();
-
   await consumer.subscribe({
     topic: "carrier-events",
     fromBeginning: false,
   });
 
-  console.log("📦 Shipment Service consumer connected");
+  console.log("[shipment-service] 📦 Shipment Service consumer connected");
 
   await consumer.run({
-    eachMessage: async ({ message }) => {
+    eachMessage: async ({ topic, partition, message }) => {
       if (!message.value) return;
 
-      const event = JSON.parse(message.value.toString());
+      let eventRaw: unknown;
+      try {
+        eventRaw = JSON.parse(message.value.toString());
+      } catch {
+        console.error(`[shipment-service] ❌ Malformed JSON message on topic=${topic}, partition=${partition}`);
+        return;
+      }
 
-      console.log("📨 Carrier event received:", event);
+      if (!isValidEventEnvelope(eventRaw)) {
+        console.warn(`[shipment-service] ⚠️ Invalid EventEnvelope format received on ${topic}:`, eventRaw);
+        return;
+      }
 
-      // Handle CARRIER_SELECTED event
+      const event = eventRaw;
+
       if (event.eventType !== "CARRIER_SELECTED") {
         return;
       }
 
-      const data = event.data;
+      console.log(`[shipment-service] 📨 Processing CARRIER_SELECTED eventId=${event.eventId}, correlationId=${event.correlationId}`);
 
-      // Idempotency check
-      const existingShipment = await prisma.shipment.findFirst({
-        where: {
-          taskId: data.taskId,
-        },
+      const data = event.data as {
+        taskId?: string;
+        productId?: string;
+        warehouseId?: string;
+        quantity?: number;
+        carrier?: string;
+        serviceLevel?: string;
+        weightKg?: number;
+        weight?: number;
+      };
+
+      if (!data.taskId || !data.productId || !data.warehouseId || !data.carrier) {
+        console.error(`[shipment-service] ❌ Malformed event data payload for eventId=${event.eventId}`);
+        return;
+      }
+
+      // Idempotency check 1: check taskId
+      const existingShipmentByTask = await prisma.shipment.findUnique({
+        where: { taskId: data.taskId },
       });
 
-      if (existingShipment) {
-        console.log(
-          "⚠️ Shipment already exists:",
-          existingShipment.trackingNumber
-        );
+      if (existingShipmentByTask) {
+        console.log(`[shipment-service] ⚠️ Shipment already exists for taskId=${data.taskId}: trackingNumber=${existingShipmentByTask.trackingNumber}`);
+        return;
+      }
+
+      // Idempotency check 2: check sourceEventId
+      const existingShipmentByEvent = await prisma.shipment.findUnique({
+        where: { sourceEventId: event.eventId },
+      });
+
+      if (existingShipmentByEvent) {
+        console.log(`[shipment-service] ⚠️ Shipment already exists for sourceEventId=${event.eventId}`);
         return;
       }
 
       const trackingNumber = generateTrackingNumber();
+      const weight = typeof data.weightKg === "number" ? data.weightKg : (typeof data.weight === "number" ? data.weight : 1.0);
 
-      const shipment = await prisma.shipment.create({
-        data: {
-          trackingNumber,
-          taskId: data.taskId,
-          productId: data.productId,
-          warehouseId: data.warehouseId,
-          quantity: data.quantity,
-          carrier: data.carrier,
-          serviceLevel: data.serviceLevel,
-          weight: data.weight,
-          status: "CREATED",
-        },
-      });
+      try {
+        const shipment = await prisma.$transaction(async (tx) => {
+          const newShipment = await tx.shipment.create({
+            data: {
+              trackingNumber,
+              sourceEventId: event.eventId,
+              correlationId: event.correlationId,
+              taskId: data.taskId!,
+              productId: data.productId!,
+              warehouseId: data.warehouseId!,
+              quantity: data.quantity || 1,
+              carrier: data.carrier!,
+              serviceLevel: data.serviceLevel || "STANDARD",
+              weight,
+              status: "CREATED",
+            },
+          });
 
-      console.log("🚚 Shipment created:", shipment);
+          const createdEvent = createEvent(
+            "SHIPMENT_CREATED",
+            "shipment-service",
+            {
+              shipmentId: newShipment.id,
+              trackingNumber: newShipment.trackingNumber,
+              taskId: newShipment.taskId,
+              carrier: newShipment.carrier,
+              serviceLevel: newShipment.serviceLevel,
+              weight: newShipment.weight,
+              status: newShipment.status,
+            },
+            newShipment.correlationId || undefined,
+            event.eventId
+          );
+
+          await tx.outboxEvent.create({
+            data: {
+              eventType: "SHIPMENT_CREATED",
+              payload: JSON.stringify(createdEvent),
+            },
+          });
+
+          return newShipment;
+        });
+
+        console.log(`[shipment-service] 🚚 Shipment created: trackingNumber=${shipment.trackingNumber}, correlationId=${shipment.correlationId}`);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes("Unique constraint") || errMsg.includes("taskId") || errMsg.includes("sourceEventId")) {
+          console.log(`[shipment-service] ℹ️ Duplicate event safely ignored via unique constraint conflict.`);
+        } else {
+          console.error(`[shipment-service] ❌ Failed to create shipment for taskId=${data.taskId}:`, err);
+        }
+      }
     },
   });
 }
-

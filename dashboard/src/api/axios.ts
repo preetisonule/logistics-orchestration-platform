@@ -11,15 +11,19 @@ function createApiClient(baseURL: string): AxiosInstance {
 }
 
 export const inventoryClient = createApiClient(
-  import.meta.env.VITE_INVENTORY_API_URL,
+  import.meta.env.VITE_INVENTORY_API_URL || "/inventory-api",
 );
 
 export const shipmentClient = createApiClient(
-  import.meta.env.VITE_SHIPMENT_API_URL,
+  import.meta.env.VITE_SHIPMENT_API_URL || "/shipment-api",
 );
 
 export const warehouseClient = createApiClient(
-  import.meta.env.VITE_WAREHOUSE_API_URL,
+  import.meta.env.VITE_WAREHOUSE_API_URL || "/warehouse-api",
+);
+
+export const eventClient = createApiClient(
+  import.meta.env.VITE_EVENT_API_URL || "/event-api",
 );
 
 export function getErrorMessage(error: unknown, fallback: string): string {

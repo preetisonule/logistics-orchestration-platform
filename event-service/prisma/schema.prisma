@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model EventLog {
+  id            String   @id @default(uuid())
+  eventId       String   @unique
+  eventType     String
+  version       Int
+  source        String
+  topic         String
+  correlationId String?
+  causationId   String?
+  occurredAt    DateTime
+  receivedAt    DateTime @default(now())
+  payload       Json
+
+  @@index([occurredAt])
+  @@index([eventType])
+  @@index([source])
+  @@index([correlationId])
+}

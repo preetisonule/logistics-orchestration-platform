@@ -1,76 +1,47 @@
 import "dotenv/config";
-import express from "express";
+import { app } from "./app.js";
 import { prisma } from "./lib/prisma.js";
-import { startConsumer } from "./kafka/consumer.js";
+import { connectProducer, producer } from "./kafka/producer.js";
+import { startConsumer, consumer } from "./kafka/consumer.js";
+import { startOutboxPublisher, stopOutboxPublisher } from "./kafka/outbox-publisher.js";
 
-const app = express();
+const PORT = Number(process.env.PORT) || 3004;
+const DATABASE_URL = process.env.DATABASE_URL;
+const KAFKA_BROKER = process.env.KAFKA_BROKER;
 
-app.use(express.json());
-
-const PORT = Number(process.env.PORT);
-
-app.get("/shipments", async (_req, res) => {
-  const shipments = await prisma.shipment.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-
-  res.json(shipments);
-});
-
-app.get("/shipments/:trackingNumber", async (req, res) => {
-  const shipment = await prisma.shipment.findUnique({
-    where: {
-      trackingNumber: req.params.trackingNumber,
-    },
-  });
-
-  if (!shipment) {
-    return res.status(404).json({
-      message: "Shipment not found",
-    });
-  }
-
-  res.json(shipment);
-});
-
-app.patch("/shipments/:trackingNumber/status", async (req, res) => {
-  const { status } = req.body;
-
-  const allowedStatuses = [
-    "CREATED",
-    "IN_TRANSIT",
-    "OUT_FOR_DELIVERY",
-    "DELIVERED",
-  ];
-
-  if (!allowedStatuses.includes(status)) {
-    return res.status(400).json({
-      message: "Invalid shipment status",
-    });
-  }
-
-  const shipment = await prisma.shipment.update({
-    where: {
-      trackingNumber: req.params.trackingNumber,
-    },
-    data: {
-      status,
-    },
-  });
-
-  res.json(shipment);
-});
-
-async function startServer() {
-  await startConsumer();
-
-  app.listen(PORT, () => {
-    console.log(`🚚 Shipment Service running on port ${PORT}`);
-  });
+if (!DATABASE_URL || !KAFKA_BROKER) {
+  console.error("❌ Fatal Configuration Error: DATABASE_URL and KAFKA_BROKER must be set.");
+  process.exit(1);
 }
 
-startServer().catch((error) => {
-  console.error("Shipment Service failed:", error);
-});
+async function startServer() {
+  await connectProducer();
+  startOutboxPublisher();
+  await startConsumer();
+
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 Shipment Service running on port ${PORT}`);
+  });
+
+  const shutdown = async (signal: string) => {
+    console.log(`\n🛑 Received ${signal}. Gracefully shutting down...`);
+    stopOutboxPublisher();
+    server.close(async () => {
+      try {
+        await consumer.disconnect();
+        await producer.disconnect();
+        await prisma.$disconnect();
+        console.log("👋 Shipment Service shut down cleanly.");
+        process.exit(0);
+      } catch (err) {
+        console.error("Error during shutdown:", err);
+        process.exit(1);
+      }
+    });
+  };
+
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+void startServer();

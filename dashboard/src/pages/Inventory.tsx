@@ -5,6 +5,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  MenuItem,
   Snackbar,
   TextField,
   Typography,
@@ -13,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchInventory,
   fetchProducts,
+  fetchWarehouses,
   reserveInventory,
 } from "../api/inventoryApi";
 import { getErrorMessage } from "../api/axios";
@@ -31,6 +33,7 @@ export function InventoryPage() {
   const [rows, setRows] = useState<InventoryRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<InventoryRow | null>(null);
   const [quantity, setQuantity] = useState("1");
+  const [serviceLevel, setServiceLevel] = useState<"STANDARD" | "EXPRESS">("STANDARD");
   const [reserving, setReserving] = useState(false);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -43,22 +46,28 @@ export function InventoryPage() {
     setErrorMessage("");
 
     try {
-      const [inventory, products] = await Promise.all([
+      const [inventory, products, warehouses] = await Promise.all([
         fetchInventory(),
         fetchProducts(),
+        fetchWarehouses(),
       ]);
 
       const productMap = new Map(products.map((product) => [product.id, product]));
+      const warehouseMap = new Map(warehouses.map((wh) => [wh.id, wh]));
 
       const enrichedRows: InventoryRow[] = inventory.map((item) => {
         const product = productMap.get(item.productId);
+        const warehouse = warehouseMap.get(item.warehouseId);
         const availableQuantity = item.totalQuantity - item.reservedQuantity;
 
         return {
           ...item,
-          productName: product?.name ?? "Unknown product",
+          productName: product?.name ?? "Unknown Product",
           productSku: product?.sku ?? item.productId,
-          warehouseLabel: item.warehouseId,
+          productWeightKg: product?.weightKg ?? 1.0,
+          warehouseName: warehouse?.name ?? `Warehouse ${item.warehouseId.slice(0, 8)}`,
+          warehouseLocation: warehouse?.location ?? "Unknown Location",
+          warehouseLabel: warehouse ? `${warehouse.name} (${warehouse.location})` : item.warehouseId,
           availableQuantity,
           status: getInventoryStatus(availableQuantity, item.totalQuantity),
         };
@@ -103,14 +112,18 @@ export function InventoryPage() {
     setReserving(true);
 
     try {
-      await reserveInventory(selectedRow.id, { quantity: parsedQuantity });
+      await reserveInventory(selectedRow.id, {
+        quantity: parsedQuantity,
+        serviceLevel,
+      });
       setSnackbar({
         open: true,
-        message: `Reserved ${parsedQuantity} units of ${selectedRow.productName}.`,
+        message: `Reserved ${parsedQuantity} units of ${selectedRow.productName} (${serviceLevel} delivery). Workflow initialized.`,
         severity: "success",
       });
       setSelectedRow(null);
       setQuantity("1");
+      setServiceLevel("STANDARD");
       await loadInventory();
     } catch (error) {
       setSnackbar({
@@ -140,8 +153,7 @@ export function InventoryPage() {
   return (
     <>
       <Alert severity="info" sx={{ mb: 2 }}>
-        Warehouse names display as IDs — a GET /warehouses endpoint is not yet exposed
-        by the inventory service.
+        Reserving inventory triggers an asynchronous Kafka workflow: Inventory Reserved → Warehouse Task Created → Operator Processing → Package Ready → Carrier Selection → Shipment Created.
       </Alert>
 
       <InventoryTable
@@ -149,6 +161,7 @@ export function InventoryPage() {
         onReserve={(row) => {
           setSelectedRow(row);
           setQuantity("1");
+          setServiceLevel("STANDARD");
         }}
       />
 
@@ -161,8 +174,7 @@ export function InventoryPage() {
         <DialogTitle>Reserve Inventory</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {selectedRow?.productName} — {selectedRow?.availableQuantity} units
-            available
+            {selectedRow?.productName} ({selectedRow?.productWeightKg} kg) — {selectedRow?.availableQuantity} units available
           </Typography>
           <TextField
             autoFocus
@@ -171,17 +183,28 @@ export function InventoryPage() {
             label="Quantity"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
+            sx={{ mb: 2 }}
             slotProps={{
               htmlInput: { min: 1, max: selectedRow?.availableQuantity },
             }}
           />
+          <TextField
+            select
+            fullWidth
+            label="Service Level (SLA)"
+            value={serviceLevel}
+            onChange={(event) => setServiceLevel(event.target.value as "STANDARD" | "EXPRESS")}
+          >
+            <MenuItem value="STANDARD">STANDARD (Ground Shipping)</MenuItem>
+            <MenuItem value="EXPRESS">EXPRESS (Air Priority)</MenuItem>
+          </TextField>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSelectedRow(null)} disabled={reserving}>
             Cancel
           </Button>
           <Button variant="contained" onClick={() => void handleReserve()} disabled={reserving}>
-            Reserve
+            Reserve Stock
           </Button>
         </DialogActions>
       </Dialog>

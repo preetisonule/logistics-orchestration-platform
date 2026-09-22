@@ -39,6 +39,8 @@ export function InventoryTable({ rows, onReserve }: InventoryTableProps) {
       const matchesSearch =
         row.productName.toLowerCase().includes(search.toLowerCase()) ||
         row.productSku.toLowerCase().includes(search.toLowerCase()) ||
+        row.warehouseName.toLowerCase().includes(search.toLowerCase()) ||
+        row.warehouseLocation.toLowerCase().includes(search.toLowerCase()) ||
         row.warehouseLabel.toLowerCase().includes(search.toLowerCase());
 
       const matchesStatus =
@@ -62,7 +64,7 @@ export function InventoryTable({ rows, onReserve }: InventoryTableProps) {
       >
         <TextField
           size="small"
-          placeholder="Search product or warehouse..."
+          placeholder="Search product, SKU or warehouse..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           sx={{ minWidth: 280, flex: 1 }}
@@ -111,10 +113,15 @@ export function InventoryTable({ rows, onReserve }: InventoryTableProps) {
                 <TableCell>
                   <Box sx={{ fontWeight: 600 }}>{row.productName}</Box>
                   <Box sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-                    {row.productSku}
+                    SKU: {row.productSku} • Weight: {row.productWeightKg} kg
                   </Box>
                 </TableCell>
-                <TableCell>{row.warehouseLabel}</TableCell>
+                <TableCell>
+                  <Box sx={{ fontWeight: 500 }}>{row.warehouseName}</Box>
+                  <Box sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
+                    {row.warehouseLocation}
+                  </Box>
+                </TableCell>
                 <TableCell align="right">{row.availableQuantity}</TableCell>
                 <TableCell align="right">{row.reservedQuantity}</TableCell>
                 <TableCell>

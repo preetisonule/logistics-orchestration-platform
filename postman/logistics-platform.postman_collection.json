@@ -1,0 +1,171 @@
+{
+  "info": {
+    "_postman_id": "8f2a1b94-912c-4734-b23d-logistics-platform",
+    "name": "Distributed Logistics Orchestration Platform",
+    "description": "API Collection for Inventory, Warehouse, Shipment, Event Store, and Health services.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "inventory_url", "value": "http://localhost:3000" },
+    { "key": "warehouse_url", "value": "http://localhost:3002" },
+    { "key": "shipment_url", "value": "http://localhost:3004" },
+    { "key": "event_url", "value": "http://localhost:3005" }
+  ],
+  "item": [
+    {
+      "name": "Health Checks",
+      "item": [
+        {
+          "name": "Inventory Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{inventory_url}}/health", "host": ["{{inventory_url}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Warehouse Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{warehouse_url}}/health", "host": ["{{warehouse_url}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Shipment Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{shipment_url}}/health", "host": ["{{shipment_url}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Event Store Service Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{event_url}}/health", "host": ["{{event_url}}"], "path": ["health"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory Service",
+      "item": [
+        {
+          "name": "Get Products",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{inventory_url}}/products", "host": ["{{inventory_url}}"], "path": ["products"] }
+          }
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ergonomic Desk Chair\",\n  \"sku\": \"CHAIR-001\",\n  \"weightKg\": 8.5\n}"
+            },
+            "url": { "raw": "{{inventory_url}}/products", "host": ["{{inventory_url}}"], "path": ["products"] }
+          }
+        },
+        {
+          "name": "Get Warehouses",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{inventory_url}}/warehouses", "host": ["{{inventory_url}}"], "path": ["warehouses"] }
+          }
+        },
+        {
+          "name": "Create Warehouse",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fulfilment Center West\",\n  \"location\": \"Pune, MH\"\n}"
+            },
+            "url": { "raw": "{{inventory_url}}/warehouses", "host": ["{{inventory_url}}"], "path": ["warehouses"] }
+          }
+        },
+        {
+          "name": "Get Inventory",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{inventory_url}}/inventory", "host": ["{{inventory_url}}"], "path": ["inventory"] }
+          }
+        },
+        {
+          "name": "Reserve Inventory Stock",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2,\n  \"serviceLevel\": \"EXPRESS\"\n}"
+            },
+            "url": { "raw": "{{inventory_url}}/inventory/:inventoryId/reserve", "host": ["{{inventory_url}}"], "path": ["inventory", ":inventoryId", "reserve"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Warehouse Service",
+      "item": [
+        {
+          "name": "Get Warehouse Tasks",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{warehouse_url}}/tasks", "host": ["{{warehouse_url}}"], "path": ["tasks"] }
+          }
+        },
+        {
+          "name": "Advance Task Status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PACKAGE_READY\"\n}"
+            },
+            "url": { "raw": "{{warehouse_url}}/tasks/:taskId/status", "host": ["{{warehouse_url}}"], "path": ["tasks", ":taskId", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shipment Service",
+      "item": [
+        {
+          "name": "Get Shipments",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{shipment_url}}/shipments", "host": ["{{shipment_url}}"], "path": ["shipments"] }
+          }
+        },
+        {
+          "name": "Update Shipment Status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_TRANSIT\"\n}"
+            },
+            "url": { "raw": "{{shipment_url}}/shipments/:trackingNumber/status", "host": ["{{shipment_url}}"], "path": ["shipments", ":trackingNumber", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Event Store Service",
+      "item": [
+        {
+          "name": "Get Event Stream",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{event_url}}/events?limit=50", "host": ["{{event_url}}"], "path": ["events"], "query": [{ "key": "limit", "value": "50" }] }
+          }
+        }
+      ]
+    }
+  ]
+}

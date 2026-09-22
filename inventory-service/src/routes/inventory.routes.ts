@@ -8,6 +8,33 @@ router.post("/", async (req, res) => {
   try {
     const { productId, warehouseId, totalQuantity } = req.body;
 
+    if (!productId || typeof productId !== "string") {
+      return res.status(400).json({ message: "Valid productId is required" });
+    }
+    if (!warehouseId || typeof warehouseId !== "string") {
+      return res.status(400).json({ message: "Valid warehouseId is required" });
+    }
+    if (typeof totalQuantity !== "number" || !Number.isInteger(totalQuantity) || totalQuantity < 0) {
+      return res.status(400).json({ message: "totalQuantity must be a non-negative integer" });
+    }
+
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      return res.status(404).json({ message: "Referenced product not found" });
+    }
+
+    const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    if (!warehouse) {
+      return res.status(404).json({ message: "Referenced warehouse not found" });
+    }
+
+    const existing = await prisma.inventory.findUnique({
+      where: { productId_warehouseId: { productId, warehouseId } },
+    });
+    if (existing) {
+      return res.status(409).json({ message: "Inventory record already exists for this product and warehouse" });
+    }
+
     const inventory = await prisma.inventory.create({
       data: {
         productId,
@@ -18,20 +45,24 @@ router.post("/", async (req, res) => {
 
     res.status(201).json(inventory);
   } catch (error) {
-    console.error(error);
+    console.error("Error creating inventory:", error);
     res.status(500).json({
       message: "Failed to create inventory",
     });
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", async (_req, res) => {
   try {
-    const inventory = await prisma.inventory.findMany();
+    const inventory = await prisma.inventory.findMany({
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
     res.status(200).json(inventory);
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching inventory:", error);
     res.status(500).json({
       message: "Failed to fetch inventory",
     });
@@ -41,9 +72,8 @@ router.get("/", async (req, res) => {
 router.post("/:id/reserve", async (req, res) => {
   try {
     const { id } = req.params;
-    const { quantity } = req.body;
+    const { quantity, serviceLevel: reqServiceLevel } = req.body;
 
-    // Validate quantity
     if (
       typeof quantity !== "number" ||
       !Number.isInteger(quantity) ||
@@ -54,9 +84,9 @@ router.post("/:id/reserve", async (req, res) => {
       });
     }
 
-    // Reserve inventory + create outbox event in ONE transaction
+    const serviceLevel = (reqServiceLevel === "EXPRESS") ? "EXPRESS" : "STANDARD";
+
     const updatedInventory = await prisma.$transaction(async (tx) => {
-      // Atomically reserve inventory
       const result = await tx.$executeRaw`
         UPDATE "Inventory"
         SET "reservedQuantity" = "reservedQuantity" + ${quantity}
@@ -64,42 +94,38 @@ router.post("/:id/reserve", async (req, res) => {
           AND "totalQuantity" - "reservedQuantity" >= ${quantity}
       `;
 
-      // No row updated = either inventory doesn't exist
-      // or there wasn't enough available inventory
       if (result === 0) {
-        const inventory = await tx.inventory.findUnique({
-          where: {
-            id,
-          },
-        });
-
-        if (!inventory) {
+        const inventoryCheck = await tx.inventory.findUnique({ where: { id } });
+        if (!inventoryCheck) {
           throw new Error("INVENTORY_NOT_FOUND");
         }
-
         throw new Error("INSUFFICIENT_INVENTORY");
       }
 
-      // Fetch updated inventory
       const inventory = await tx.inventory.findUnique({
-        where: {
-          id,
-        },
+        where: { id },
+        include: { product: true },
       });
 
       if (!inventory) {
         throw new Error("INVENTORY_NOT_FOUND");
       }
 
-      // Create event payload
-      const event = createEvent("INVENTORY_RESERVED", {
-        inventoryId: inventory.id,
-        productId: inventory.productId,
-        warehouseId: inventory.warehouseId,
-        quantity,
-      });
+      const weightKg = inventory.product?.weightKg ?? 1;
 
-      // Store event in Outbox
+      const event = createEvent(
+        "INVENTORY_RESERVED",
+        "inventory-service",
+        {
+          inventoryId: inventory.id,
+          productId: inventory.productId,
+          warehouseId: inventory.warehouseId,
+          quantity,
+          weightKg,
+          serviceLevel,
+        }
+      );
+
       await tx.outboxEvent.create({
         data: {
           eventType: "INVENTORY_RESERVED",
@@ -112,7 +138,7 @@ router.post("/:id/reserve", async (req, res) => {
 
     return res.status(200).json(updatedInventory);
   } catch (error) {
-    console.error(error);
+    console.error("Error reserving inventory:", error);
 
     if (error instanceof Error) {
       if (error.message === "INVENTORY_NOT_FOUND") {

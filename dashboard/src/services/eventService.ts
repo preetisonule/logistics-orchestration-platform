@@ -1,61 +1,37 @@
+import { eventClient } from "../api/axios";
 import type { LogisticsEvent } from "../types/event";
 
-/**
- * TODO: Replace with a backend Event API when available.
- * Future flow: Backend Event API → WebSocket/SSE → React Dashboard
- */
-export async function fetchEvents(): Promise<LogisticsEvent[]> {
-  await new Promise((resolve) => setTimeout(resolve, 400));
-
-  return MOCK_EVENTS;
+export interface EventFilterOptions {
+  limit?: number;
+  eventType?: string;
+  source?: string;
+  correlationId?: string;
 }
 
-const MOCK_EVENTS: LogisticsEvent[] = [
-  {
-    eventId: "evt-001",
-    eventType: "INVENTORY_RESERVED",
-    service: "inventory-service",
-    timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    data: {
-      inventoryId: "inv-001",
-      productId: "prod-001",
-      warehouseId: "wh-001",
-      quantity: 5,
-    },
-  },
-  {
-    eventId: "evt-002",
-    eventType: "PACKAGE_READY",
-    service: "warehouse-service",
-    timestamp: new Date(Date.now() - 1000 * 60 * 16).toISOString(),
-    data: {
-      taskId: "task-001",
-      productId: "prod-001",
-      warehouseId: "wh-001",
-      quantity: 5,
-    },
-  },
-  {
-    eventId: "evt-003",
-    eventType: "CARRIER_SELECTED",
-    service: "carrier-selection-service",
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    data: {
-      taskId: "task-001",
-      carrier: "DELHIVERY",
-      serviceLevel: "EXPRESS",
-      weight: 2,
-    },
-  },
-  {
-    eventId: "evt-004",
-    eventType: "SHIPMENT_CREATED",
-    service: "shipment-service",
-    timestamp: new Date(Date.now() - 1000 * 60 * 14).toISOString(),
-    data: {
-      trackingNumber: "TRK-20260918-001",
-      carrier: "DELHIVERY",
-      status: "CREATED",
-    },
-  },
-];
+export async function fetchEvents(options?: EventFilterOptions): Promise<LogisticsEvent[]> {
+  try {
+    const params: Record<string, string | number> = {};
+    if (options?.limit) params.limit = options.limit;
+    if (options?.eventType && options.eventType !== "ALL") params.eventType = options.eventType;
+    if (options?.source && options.source !== "ALL") params.source = options.source;
+    if (options?.correlationId) params.correlationId = options.correlationId;
+
+    const { data } = await eventClient.get<LogisticsEvent[]>("/events", { params });
+
+    return data.map((item) => {
+      const payloadData = item.payload && typeof item.payload === "object" && "data" in item.payload
+        ? (item.payload.data as Record<string, unknown>)
+        : item.payload || {};
+
+      return {
+        ...item,
+        service: item.source || item.service || "unknown-service",
+        timestamp: item.occurredAt || item.timestamp || new Date().toISOString(),
+        data: payloadData,
+      };
+    });
+  } catch (error) {
+    console.warn("Real Event API unavailable, returning empty list:", error);
+    return [];
+  }
+}

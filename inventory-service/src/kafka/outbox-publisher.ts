@@ -1,54 +1,97 @@
-
 import { prisma } from "../lib/prisma.js";
 import { producer } from "./producer.js";
 
-export async function startOutboxPublisher() {
-  console.log("📤 Outbox Publisher started");
+let isRunning = false;
+let shouldStop = false;
 
-  setInterval(async () => {
-    try {
-      const events = await prisma.outboxEvent.findMany({
-        where: {
-          published: false,
-        },
-        orderBy: {
-          createdAt: "asc",
-        },
-        take: 10,
-      });
+export async function publishOutboxEventsOnce(): Promise<number> {
+  let publishedCount = 0;
+  try {
+    const events = await prisma.outboxEvent.findMany({
+      where: {
+        published: false,
+        attempts: { lt: 10 },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      take: 10,
+    });
 
-      for (const event of events) {
-        try {
-          await producer.send({
-            topic: "inventory-events",
-            messages: [
-              {
-                value: event.payload,
-              },
-            ],
-          });
-
-          await prisma.outboxEvent.update({
-            where: {
-              id: event.id,
-            },
-            data: {
-              published: true,
-              publishedAt: new Date(),
-            },
-          });
-
-          console.log("📤 Outbox event published:", event.id);
-        } catch (error) {
-          console.error(
-            "❌ Failed to publish outbox event:",
-            event.id,
-            error
-          );
-        }
+    for (const event of events) {
+      let key: string | undefined;
+      try {
+        const parsed = JSON.parse(event.payload);
+        key = parsed.data?.inventoryId || parsed.eventId;
+      } catch {
+        // payload parse fallback
       }
-    } catch (error) {
-      console.error("❌ Outbox publisher error:", error);
+
+      try {
+        await producer.send({
+          topic: "inventory-events",
+          messages: [
+            {
+              key: key ? String(key) : undefined,
+              value: event.payload,
+            },
+          ],
+        });
+
+        await prisma.outboxEvent.update({
+          where: { id: event.id },
+          data: {
+            published: true,
+            publishedAt: new Date(),
+          },
+        });
+
+        publishedCount++;
+        console.log(`[inventory-service] 📤 Outbox event published: ${event.id}`);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error(`[inventory-service] ❌ Failed to publish outbox event ${event.id}:`, errorMessage);
+
+        await prisma.outboxEvent.update({
+          where: { id: event.id },
+          data: {
+            attempts: { increment: 1 },
+            lastError: errorMessage,
+          },
+        });
+      }
     }
-  }, 3000);
+  } catch (error) {
+    console.error("[inventory-service] ❌ Outbox publisher loop error:", error);
+  }
+  return publishedCount;
+}
+
+export function startOutboxPublisher(intervalMs = 3000) {
+  if (isRunning) return;
+  isRunning = true;
+  shouldStop = false;
+
+  console.log("[inventory-service] 📤 Non-overlapping Outbox Publisher started");
+
+  async function loop() {
+    if (shouldStop) {
+      isRunning = false;
+      return;
+    }
+
+    await publishOutboxEventsOnce();
+
+    if (!shouldStop) {
+      setTimeout(loop, intervalMs);
+    } else {
+      isRunning = false;
+    }
+  }
+
+  void loop();
+}
+
+export function stopOutboxPublisher() {
+  shouldStop = true;
 }

@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN "weightKg" DOUBLE PRECISION NOT NULL DEFAULT 1;
+
+-- AlterTable
+ALTER TABLE "OutboxEvent" ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "lastError" TEXT;

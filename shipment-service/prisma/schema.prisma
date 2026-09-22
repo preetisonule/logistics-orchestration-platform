@@ -8,21 +8,29 @@ datasource db {
 }
 
 model Shipment {
-  id            String   @id @default(uuid())
-  trackingNumber String  @unique
+  id             String   @id @default(uuid())
+  trackingNumber String   @unique
+  sourceEventId  String?  @unique
+  correlationId  String?
+  taskId         String   @unique
+  productId      String
+  warehouseId    String
+  quantity       Int
+  carrier        String
+  serviceLevel   String
+  weight         Float
+  status         String   @default("CREATED")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
 
-  
-  taskId String @unique
-  productId     String
-  warehouseId   String
-  quantity      Int
-
-  carrier       String
-  serviceLevel  String
-  weight        Float
-
-  status        String   @default("CREATED")
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+model OutboxEvent {
+  id          String    @id @default(uuid())
+  eventType   String
+  payload     String
+  published   Boolean   @default(false)
+  attempts    Int       @default(0)
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
 }

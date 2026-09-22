@@ -1,95 +1,85 @@
-📝 Kafka — Quick Revision
+📝 Kafka — Architecture & Event Contract Specifications
 
-Apache Kafka is a distributed event-streaming platform used for asynchronous communication between services.
-
-Instead of one service directly calling another service, a service can publish an event to Kafka, and another service can consume that event whenever it is ready.
-
-Important terms
-Producer → service that publishes events
-Consumer → service that reads/events processes them
-Topic → named stream/category where events are published
-Event/Message → actual information being sent
+Apache Kafka is the event-streaming backbone for our Distributed Logistics Orchestration Platform.
 
 ========================================================================================
-🏗️ Core Architecture
-Kafka works like a highly scalable, fault-tolerant log. Its main components are:
+🔑 Key Concepts in Our Implementation
+========================================================================================
 
-Producers: Applications that publish (write) data to Kafka.
+Producer: Microservice publishing domain events via Transactional Outbox.
+Consumer: Independent microservice processing events.
+Topic: Dedicated event streams (`inventory-events`, `warehouse-events`, `carrier-events`, `shipment-events`).
+Partition: Partition keying maintains message ordering per entity (`inventoryId`, `taskId`, `shipmentId`).
+Consumer Group:
+  - Same Consumer Group = Competing consumers (load balancing across instances).
+  - Different Consumer Groups = Independent consumption (e.g., Warehouse Service vs Event Store Service).
+Offset: Sequential position tracker per consumer group in partition log.
+Event ID: Global unique identifier (`eventId`) for idempotency enforcement.
+Correlation ID: Distributed tracing identifier (`correlationId`) tying an entire order lifecycle together.
+Causation ID: Upstream parent event identifier (`causationId`) indicating what triggered the event.
 
-Topics: Categories or feeds where records are stored. A topic can have many producers and consumers.
+========================================================================================
+📜 Standard Event Envelope Contract
+========================================================================================
 
-Partitions: Topics are split into partitions to allow for parallel processing and scaling across multiple servers.
-
-Brokers: The servers that make up a Kafka cluster. They store the data and handle requests.
-
-Consumers: Applications that subscribe to topics and read the data.
-
-Offsets: Each record within a partition gets a unique, sequential ID, allowing consumers to track exactly where they are in the stream
-
-====================================================================================================
-
-How we're using Kafka
-
-Our project is a Distributed Logistics Orchestration Platform.
-
-The services communicate through Kafka:
-
-Inventory Service
-       │
-       │ INVENTORY_RESERVED
-       ▼
-     Kafka
-       │
-       ▼
-Warehouse Service
-       │
-       │ PACKAGE_READY
-       ▼
-     Kafka
-       │
-       ▼
-Carrier Selection
-       │
-       │ CARRIER_SELECTED
-       ▼
-     Kafka
-       │
-       ▼
-Shipment Service
-
-For example, when Inventory successfully reserves 30 units, it publishes:
+All events emitted to Kafka use the standard EventEnvelope structure:
 
 {
-  "event": "INVENTORY_RESERVED",
-  "inventoryId": "...",
-  "productId": "...",
-  "warehouseId": "...",
-  "quantity": 30
+  "eventId": "uuid",
+  "eventType": "INVENTORY_RESERVED",
+  "version": 1,
+  "occurredAt": "2026-09-19T12:00:00.000Z",
+  "source": "inventory-service",
+  "correlationId": "uuid",
+  "causationId": "uuid",
+  "data": { ... }
 }
 
-The Warehouse Service consumes this event and starts its warehouse-processing workflow.
+========================================================================================
+🔄 Workflow Stream
+========================================================================================
 
-Why Kafka instead of direct API calls?
+Inventory Service (POST /inventory/:id/reserve)
+       │
+       │ INVENTORY_RESERVED (key: inventoryId)
+       ▼
+     Kafka (inventory-events)
+       │
+       ▼
+Warehouse Service (Idempotent task creation)
+       │
+       │ PATCH /tasks/:id/status -> PACKAGE_READY
+       │ PACKAGE_READY (key: taskId)
+       ▼
+     Kafka (warehouse-events)
+       │
+       ▼
+Carrier Selection Service (Priority & Weight Evaluation)
+       │
+       │ CARRIER_SELECTED (key: taskId)
+       ▼
+     Kafka (carrier-events)
+       │
+       ▼
+Shipment Service (Idempotent shipment creation)
+       │
+       │ SHIPMENT_CREATED / SHIPMENT_STATUS_UPDATED
+       ▼
+     Kafka (shipment-events)
+       │
+       ▼
+Event Store Service (Consumer group: event-store-service-group, fromBeginning: true)
+       │
+       ▼
+PostgreSQL event_db -> GET /events -> React Operations Dashboard
 
-With direct communication:
+========================================================================================
+🛡️ Reliability Patterns
+========================================================================================
 
-Inventory ─────HTTP─────> Warehouse
+1. Transactional Outbox Pattern:
+   Database updates and outbox insertions occur inside a single ACID transaction (`prisma.$transaction`).
+   A background non-overlapping loop publishes events to Kafka with retry tracking (`attempts`, `lastError`).
 
-Inventory becomes dependent on Warehouse being available.
-
-With Kafka:
-
-Inventory ──> Kafka ──> Warehouse
-
-Inventory can publish the event without needing Warehouse to process it immediately.
-
-This gives us asynchronous, loosely coupled communication, which is one of the important ideas we're demonstrating in this distributed-systems project.
-
-🔑 One-line revision
-
-Kafka is the event-driven communication layer of our logistics platform: services publish events to Kafka topics, and other services consume those events asynchronously.
-=========================================================================================================================
-🔑 Kafka consumer : Lock this in:
-
-Same group = share the work
-Different groups = each gets the even
+2. Idempotent Consumer Processing:
+   Kafka guarantees at-least-once delivery. Downstream consumers track `sourceEventId` or `taskId` with database-level `@unique` constraints to safely ignore duplicate deliveries.

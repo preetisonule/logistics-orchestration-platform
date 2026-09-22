@@ -1,50 +1,44 @@
 import "dotenv/config";
-import express from "express";
+import { app } from "./app.js";
 import { prisma } from "./lib/prisma.js";
-import productRoutes from "./routes/product.routes.js";
-import warehouseRoutes from "./routes/warehouse.routes.js";
-import inventoryRoutes from "./routes/inventory.routes.js";
-import { connectProducer } from "./kafka/producer.js";
-import { startOutboxPublisher } from "./kafka/outbox-publisher.js";
+import { connectProducer, producer } from "./kafka/producer.js";
+import { startOutboxPublisher, stopOutboxPublisher } from "./kafka/outbox-publisher.js";
 
+const PORT = Number(process.env.PORT) || 3000;
+const DATABASE_URL = process.env.DATABASE_URL;
+const KAFKA_BROKER = process.env.KAFKA_BROKER;
 
-const app = express();
-
-app.use(express.json());
-app.use("/products", productRoutes);
-app.use("/warehouses", warehouseRoutes);
-app.use("/inventory", inventoryRoutes);
-
-
-app.get("/", async (req, res) => {
-  try {
-    const productCount = await prisma.product.count();
-
-    res.json({
-      service: "Inventory Service",
-      status: "running",
-      database: "connected",
-      productCount,
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      database: "connection failed",
-    });
-  }
-});
-
-const PORT = Number(process.env.PORT);
+if (!DATABASE_URL || !KAFKA_BROKER) {
+  console.error("❌ Fatal Configuration Error: DATABASE_URL and KAFKA_BROKER must be set.");
+  process.exit(1);
+}
 
 async function startServer() {
   await connectProducer();
-
   startOutboxPublisher();
 
-  app.listen(PORT, () => {
-    console.log(`Inventory Service running on port ${PORT}`);
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 Inventory Service running on port ${PORT}`);
   });
+
+  const shutdown = async (signal: string) => {
+    console.log(`\n🛑 Received ${signal}. Gracefully shutting down...`);
+    stopOutboxPublisher();
+    server.close(async () => {
+      try {
+        await producer.disconnect();
+        await prisma.$disconnect();
+        console.log("👋 Inventory Service shut down cleanly.");
+        process.exit(0);
+      } catch (err) {
+        console.error("Error during shutdown:", err);
+        process.exit(1);
+      }
+    });
+  };
+
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-startServer();
+void startServer();

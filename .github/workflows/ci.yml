@@ -1,0 +1,63 @@
+name: CI Build & Test Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service:
+          - inventory-service
+          - warehouse-service
+          - carrier-selection-service
+          - shipment-service
+          - event-service
+          - dashboard
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: '${{ matrix.service }}/package-lock.json'
+
+      - name: Install Dependencies
+        run: |
+          cd ${{ matrix.service }}
+          npm ci || npm install
+
+      - name: Generate Prisma Client (if applicable)
+        if: matrix.service != 'dashboard' && matrix.service != 'carrier-selection-service'
+        run: |
+          cd ${{ matrix.service }}
+          npx prisma generate
+
+      - name: Build Code
+        run: |
+          cd ${{ matrix.service }}
+          npm run build
+
+      - name: Run Unit Tests
+        if: matrix.service != 'dashboard'
+        run: |
+          cd ${{ matrix.service }}
+          npm test
+
+  validate-docker-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config
