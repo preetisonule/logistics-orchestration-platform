@@ -11,6 +11,8 @@ export const SHIPMENT_STATUS_ORDER: ShipmentStatus[] = [
   "DELIVERED",
 ];
 
+import type { AutomationPipelineMode } from "./automationMode";
+
 export interface Shipment {
   id: string;
   trackingNumber: string;
@@ -21,6 +23,7 @@ export interface Shipment {
   carrier: string;
   serviceLevel: string;
   weight: number;
+  automationMode: AutomationPipelineMode;
   status: ShipmentStatus;
   createdAt: string;
   updatedAt: string;

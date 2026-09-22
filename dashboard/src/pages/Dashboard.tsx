@@ -1,6 +1,6 @@
 import { Alert, Box, Grid, Typography } from "@mui/material";
 import { Boxes, PackageCheck, RefreshCw, Truck, Warehouse } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { fetchInventory } from "../api/inventoryApi";
 import { fetchShipments } from "../api/shipmentApi";
 import { fetchWarehouseTasks } from "../api/warehouseApi";
@@ -10,6 +10,7 @@ import { MetricCard } from "../components/dashboard/MetricCard";
 import { ShipmentPipeline } from "../components/dashboard/ShipmentPipeline";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
+import { usePolling } from "../hooks/usePolling";
 import { fetchEvents } from "../services/eventService";
 import { mapEventsToActivity, type ActivityItem } from "../services/activityService";
 
@@ -25,7 +26,7 @@ export function DashboardPage() {
   const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string>("");
-
+  const hasLoadedRef = useRef(false);
   const isFetchingRef = useRef(false);
 
   const loadDashboardData = useCallback(async (isInitial = false) => {
@@ -83,16 +84,11 @@ export function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadDashboardData(true);
-
-    // Non-overlapping periodic live polling (every 8s)
-    const interval = setInterval(() => {
-      void loadDashboardData(false);
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, [loadDashboardData]);
+  usePolling(async () => {
+    const isInitial = !hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    await loadDashboardData(isInitial);
+  }, 4000);
 
   if (loadState === "loading") {
     return <LoadingState message="Loading live operational metrics..." />;

@@ -60,6 +60,7 @@ async function start() {
           quantity?: number;
           weightKg?: number;
           serviceLevel?: string;
+          automationMode?: string;
         };
       };
 
@@ -100,6 +101,7 @@ async function start() {
             serviceLevel,
             weightKg,
             selectionReason,
+            automationMode: data.automationMode === "AUTONOMOUS" ? "AUTONOMOUS" : "MANUAL",
           },
         };
 

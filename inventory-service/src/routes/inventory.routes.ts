@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createEvent } from "../events/event.js";
 import { prisma } from "../lib/prisma.js";
+import { parseAutomationMode } from "../utils/automationMode.js";
 
 const router = Router();
 
@@ -72,7 +73,7 @@ router.get("/", async (_req, res) => {
 router.post("/:id/reserve", async (req, res) => {
   try {
     const { id } = req.params;
-    const { quantity, serviceLevel: reqServiceLevel } = req.body;
+    const { quantity, serviceLevel: reqServiceLevel, automationMode: reqAutomationMode } = req.body;
 
     if (
       typeof quantity !== "number" ||
@@ -84,7 +85,8 @@ router.post("/:id/reserve", async (req, res) => {
       });
     }
 
-    const serviceLevel = (reqServiceLevel === "EXPRESS") ? "EXPRESS" : "STANDARD";
+    const serviceLevel = reqServiceLevel === "EXPRESS" ? "EXPRESS" : "STANDARD";
+    const automationMode = parseAutomationMode(reqAutomationMode);
 
     const updatedInventory = await prisma.$transaction(async (tx) => {
       const result = await tx.$executeRaw`
@@ -123,6 +125,7 @@ router.post("/:id/reserve", async (req, res) => {
           quantity,
           weightKg,
           serviceLevel,
+          automationMode,
         }
       );
 

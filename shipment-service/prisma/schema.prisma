@@ -19,6 +19,7 @@ model Shipment {
   carrier        String
   serviceLevel   String
   weight         Float
+  automationMode String   @default("MANUAL")
   status         String   @default("CREATED")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

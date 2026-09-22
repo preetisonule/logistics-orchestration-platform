@@ -1,6 +1,12 @@
 import express from "express";
 import { prisma } from "./lib/prisma.js";
-import { createEvent } from "./events/event.js";
+import {
+  InvalidTransitionError,
+  ShipmentNotFoundError,
+  TransitionConflictError,
+  transitionShipmentStatus,
+  type ShipmentStatus,
+} from "./services/shipmentTransitions.js";
 
 export const app = express();
 
@@ -72,66 +78,26 @@ app.patch("/shipments/:trackingNumber/status", async (req, res) => {
       });
     }
 
-    const shipment = await prisma.shipment.findUnique({
-      where: {
-        trackingNumber: req.params.trackingNumber,
-      },
-    });
+    const updatedShipment = await transitionShipmentStatus(
+      req.params.trackingNumber,
+      status as ShipmentStatus,
+    );
 
-    if (!shipment) {
-      return res.status(404).json({
-        message: "Shipment not found",
-      });
-    }
-
-    const validTransition =
-      (shipment.status === "CREATED" && status === "IN_TRANSIT") ||
-      (shipment.status === "IN_TRANSIT" && status === "OUT_FOR_DELIVERY") ||
-      (shipment.status === "OUT_FOR_DELIVERY" && status === "DELIVERED");
-
-    if (!validTransition) {
-      return res.status(400).json({
-        message: `Invalid status transition from ${shipment.status} to ${status}`,
-      });
-    }
-
-    const updatedShipment = await prisma.$transaction(async (tx) => {
-      const updated = await tx.shipment.update({
-        where: {
-          trackingNumber: req.params.trackingNumber,
-        },
-        data: {
-          status,
-        },
-      });
-
-      const statusEvent = createEvent(
-        "SHIPMENT_STATUS_UPDATED",
-        "shipment-service",
-        {
-          shipmentId: updated.id,
-          trackingNumber: updated.trackingNumber,
-          previousStatus: shipment.status,
-          status: updated.status,
-          carrier: updated.carrier,
-        },
-        updated.correlationId || undefined,
-        updated.id
-      );
-
-      await tx.outboxEvent.create({
-        data: {
-          eventType: "SHIPMENT_STATUS_UPDATED",
-          payload: JSON.stringify(statusEvent),
-        },
-      });
-
-      return updated;
-    });
-
-    console.log(`[shipment-service] 🚚 Shipment ${updatedShipment.trackingNumber} updated to ${status}. Outbox event created.`);
+    console.log(
+      `[shipment-service] 🚚 Shipment ${updatedShipment.trackingNumber} updated to ${status}. Outbox event created.`,
+    );
     res.json(updatedShipment);
   } catch (error) {
+    if (error instanceof ShipmentNotFoundError) {
+      return res.status(404).json({ message: "Shipment not found" });
+    }
+    if (error instanceof InvalidTransitionError) {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error instanceof TransitionConflictError) {
+      return res.status(409).json({ message: "Shipment status was updated by another process" });
+    }
+
     console.error("Error updating shipment status:", error);
     res.status(500).json({ message: "Failed to update shipment status" });
   }

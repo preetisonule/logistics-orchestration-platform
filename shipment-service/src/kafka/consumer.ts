@@ -2,6 +2,7 @@ import { Kafka } from "kafkajs";
 import randomBytes from "crypto";
 import { prisma } from "../lib/prisma.js";
 import { createEvent, isValidEventEnvelope } from "../events/event.js";
+import { parseAutomationMode } from "../services/automationMode.js";
 
 const kafka = new Kafka({
   clientId: "shipment-service",
@@ -60,6 +61,7 @@ export async function startConsumer() {
         serviceLevel?: string;
         weightKg?: number;
         weight?: number;
+        automationMode?: string;
       };
 
       if (!data.taskId || !data.productId || !data.warehouseId || !data.carrier) {
@@ -104,6 +106,7 @@ export async function startConsumer() {
               carrier: data.carrier!,
               serviceLevel: data.serviceLevel || "STANDARD",
               weight,
+              automationMode: parseAutomationMode(data.automationMode),
               status: "CREATED",
             },
           });

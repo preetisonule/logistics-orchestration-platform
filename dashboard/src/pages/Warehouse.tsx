@@ -1,5 +1,5 @@
 import { Alert, Snackbar } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   fetchWarehouseTasks,
   updateWarehouseTaskStatus,
@@ -9,6 +9,7 @@ import { EmptyState } from "../components/common/EmptyState";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
 import { WarehouseTaskTable } from "../components/warehouse/WarehouseTaskTable";
+import { usePolling } from "../hooks/usePolling";
 import type { WarehouseTask, WarehouseTaskStatus } from "../types/warehouse";
 
 type LoadState = "loading" | "success" | "empty" | "error";
@@ -17,29 +18,36 @@ export function WarehousePage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [tasks, setTasks] = useState<WarehouseTask[]>([]);
+  const hasLoadedRef = useRef(false);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
 
-  const loadTasks = useCallback(async () => {
-    setLoadState("loading");
-    setErrorMessage("");
+  const loadTasks = useCallback(async (isInitial = false) => {
+    if (isInitial) {
+      setLoadState("loading");
+      setErrorMessage("");
+    }
 
     try {
       const data = await fetchWarehouseTasks();
       setTasks(data);
       setLoadState(data.length === 0 ? "empty" : "success");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "Failed to load warehouse tasks."));
-      setLoadState("error");
+      if (isInitial) {
+        setErrorMessage(getErrorMessage(error, "Failed to load warehouse tasks."));
+        setLoadState("error");
+      }
     }
   }, []);
 
-  useEffect(() => {
-    void loadTasks();
-  }, [loadTasks]);
+  usePolling(async () => {
+    const isInitial = !hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    await loadTasks(isInitial);
+  }, 2500);
 
   const handleAdvanceStatus = async (
     task: WarehouseTask,

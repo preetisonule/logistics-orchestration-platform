@@ -103,6 +103,22 @@ Event Store Service (Consumes all events with fromBeginning: true)
 React Dashboard Events & Live Feed (Periodic non-overlapping polling)
 ```
 
+## Automation Modes
+
+Every new inventory reservation includes an `automationMode`:
+
+- `MANUAL` (default): the operator advances Warehouse tasks and Shipment statuses through the dashboard.
+- `AUTONOMOUS`: backend workers advance Warehouse tasks from `PICKING_PENDING` to `PACKAGE_READY`, then advance Shipments from `CREATED` to `DELIVERED`.
+
+The dashboard stores the selected mode in `localStorage`, but the mode is persisted with each workflow and propagated through Kafka. Carrier selection and shipment creation remain event-driven in both modes.
+
+### Backend Automation Workers
+
+- Warehouse Service polls eligible autonomous tasks using database status and `updatedAt`. It advances one state approximately every 2 seconds by default.
+- Shipment Service polls eligible autonomous shipments using database status and `updatedAt`. It advances one state approximately every 5 seconds by default.
+- Workers use atomic conditional transitions and database state, so manual/automated races are safe and in-progress workflows resume after a service restart.
+- Polling dashboard views observe the real backend state; no workflow timing is simulated in React.
+
 ---
 
 ## 📦 Microservices Breakdown
@@ -146,7 +162,7 @@ interface EventEnvelope<T> {
 - `POST /warehouses` — Create warehouse (`name`, `location`).
 - `GET /inventory` — List stock records.
 - `POST /inventory` — Create stock record (`productId`, `warehouseId`, `totalQuantity`).
-- `POST /inventory/:id/reserve` — Reserve stock (`quantity`, `serviceLevel`).
+- `POST /inventory/:id/reserve` — Reserve stock (`quantity`, `serviceLevel`, `automationMode` where mode is `MANUAL` or `AUTONOMOUS`).
 - `GET /health` — Readiness health check.
 
 ### Warehouse Service (`http://localhost:3002`)
@@ -187,6 +203,8 @@ interface EventEnvelope<T> {
    ```bash
    node scripts/seed-demo.mjs
    ```
+
+   Select `MANUAL` or `AUTONOMOUS` in the dashboard before reserving inventory. The selected mode applies to workflows started after the selection.
 
 4. **Launch Operations Dashboard**:
    ```bash
@@ -235,4 +253,5 @@ cd event-service && npm test
 
 - Carrier API calls and driver assignments are simulated deterministic rule engines.
 - Package location tracking is updated manually via operational status transitions.
+- Autonomous fulfillment is a deterministic demonstration workflow; its delays are configurable through the Warehouse and Shipment service environment variables.
 - Authentication and external OAuth gateways are omitted to focus on distributed system principles.

@@ -90,6 +90,7 @@ export function WarehouseTaskTable({
               <TableCell>Product</TableCell>
               <TableCell>Warehouse</TableCell>
               <TableCell align="right">Quantity</TableCell>
+              <TableCell>Mode</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Created</TableCell>
               <TableCell>Updated</TableCell>
@@ -109,6 +110,12 @@ export function WarehouseTaskTable({
                   <TableCell align="right">{task.quantity}</TableCell>
                   <TableCell>
                     <StatusChip
+                      label={task.automationMode === "AUTONOMOUS" ? "Automatic" : "Manual"}
+                      tone={task.automationMode === "AUTONOMOUS" ? "info" : "default"}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <StatusChip
                       label={formatStatusLabel(task.status)}
                       tone={statusTone[task.status]}
                     />
@@ -116,7 +123,7 @@ export function WarehouseTaskTable({
                   <TableCell>{formatDateTime(task.createdAt)}</TableCell>
                   <TableCell>{formatDateTime(task.updatedAt)}</TableCell>
                   <TableCell align="right">
-                    {nextStatus && onAdvanceStatus && (
+                    {task.automationMode === "MANUAL" && nextStatus && onAdvanceStatus && (
                       <Tooltip title={`Advance to ${formatStatusLabel(nextStatus)}`}>
                         <IconButton
                           size="small"

@@ -125,6 +125,7 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
               <TableCell>Warehouse</TableCell>
               <TableCell>Carrier</TableCell>
               <TableCell>Service Level</TableCell>
+              <TableCell>Mode</TableCell>
               <TableCell align="right">Weight</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Created</TableCell>
@@ -145,6 +146,12 @@ export function ShipmentTable({ shipments }: ShipmentTableProps) {
                 <TableCell>{truncateId(shipment.warehouseId)}</TableCell>
                 <TableCell>{shipment.carrier}</TableCell>
                 <TableCell>{shipment.serviceLevel}</TableCell>
+                <TableCell>
+                  <StatusChip
+                    label={shipment.automationMode === "AUTONOMOUS" ? "Automatic" : "Manual"}
+                    tone={shipment.automationMode === "AUTONOMOUS" ? "info" : "default"}
+                  />
+                </TableCell>
                 <TableCell align="right">{shipment.weight} kg</TableCell>
                 <TableCell>
                   <StatusChip

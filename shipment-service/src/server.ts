@@ -4,6 +4,10 @@ import { prisma } from "./lib/prisma.js";
 import { connectProducer, producer } from "./kafka/producer.js";
 import { startConsumer, consumer } from "./kafka/consumer.js";
 import { startOutboxPublisher, stopOutboxPublisher } from "./kafka/outbox-publisher.js";
+import {
+  startShipmentAutomationWorker,
+  stopShipmentAutomationWorker,
+} from "./services/automation.js";
 
 const PORT = Number(process.env.PORT) || 3004;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -18,6 +22,7 @@ async function startServer() {
   await connectProducer();
   startOutboxPublisher();
   await startConsumer();
+  startShipmentAutomationWorker();
 
   const server = app.listen(PORT, () => {
     console.log(`🚀 Shipment Service running on port ${PORT}`);
@@ -25,6 +30,7 @@ async function startServer() {
 
   const shutdown = async (signal: string) => {
     console.log(`\n🛑 Received ${signal}. Gracefully shutting down...`);
+    stopShipmentAutomationWorker();
     stopOutboxPublisher();
     server.close(async () => {
       try {

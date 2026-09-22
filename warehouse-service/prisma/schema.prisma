@@ -17,6 +17,7 @@ model WarehouseTask {
   quantity      Int
   weightKg      Float    @default(1)
   serviceLevel  String   @default("STANDARD")
+    automationMode String  @default("MANUAL")
   status        String   @default("PICKING_PENDING")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

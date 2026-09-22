@@ -1,6 +1,7 @@
 import { Kafka } from "kafkajs";
 import { prisma } from "../lib/prisma.js";
 import { isValidEventEnvelope } from "../events/event.js";
+import { parseAutomationMode } from "../services/automationMode.js";
 
 const kafka = new Kafka({
   clientId: "warehouse-service",
@@ -52,6 +53,7 @@ export async function startConsumer() {
         inventoryId?: string;
         weightKg?: number;
         serviceLevel?: string;
+        automationMode?: string;
       };
 
       if (!data.productId || !data.warehouseId || typeof data.quantity !== "number") {
@@ -80,6 +82,7 @@ export async function startConsumer() {
             quantity: data.quantity,
             weightKg: typeof data.weightKg === "number" ? data.weightKg : 1.0,
             serviceLevel: data.serviceLevel || "STANDARD",
+            automationMode: parseAutomationMode(data.automationMode),
             status: "PICKING_PENDING",
           },
         });

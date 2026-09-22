@@ -36,7 +36,10 @@ export interface InventoryRow extends InventoryRecord {
 
 export type InventoryStatus = "AVAILABLE" | "LOW_STOCK" | "DEPLETED";
 
+import type { AutomationPipelineMode } from "./automationMode";
+
 export interface ReserveInventoryPayload {
   quantity: number;
   serviceLevel?: "STANDARD" | "EXPRESS";
+  automationMode: AutomationPipelineMode;
 }

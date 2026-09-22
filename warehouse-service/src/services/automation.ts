@@ -1,129 +1,104 @@
 import { prisma } from "../lib/prisma.js";
-import { createEvent } from "../events/event.js";
+import {
+  TransitionConflictError,
+  advanceWarehouseTaskById,
+  getNextWarehouseTaskStatus,
+  type WarehouseTaskStatus,
+} from "./taskTransitions.js";
 
-let isAutomationEnabled = process.env.AUTOMATE_WAREHOUSE_TASKS !== "false";
 let isRunning = false;
 let shouldStop = false;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function getWarehouseAutomationStatus(): boolean {
-  return isAutomationEnabled;
+function getStepDelayMs(): number {
+  const parsed = Number(process.env.AUTOMATION_STEP_DELAY_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2000;
 }
 
-export function setWarehouseAutomationStatus(enabled: boolean): boolean {
-  isAutomationEnabled = enabled;
-  console.log(`[warehouse-service] 🤖 Warehouse Task Automation set to: ${enabled ? "ON" : "OFF"}`);
-  return isAutomationEnabled;
+function getPollIntervalMs(): number {
+  const parsed = Number(process.env.AUTOMATION_POLL_INTERVAL_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1000;
 }
 
 export async function processAutomatedWarehouseTasksOnce(): Promise<number> {
-  if (!isAutomationEnabled) return 0;
+  const stepDelayMs = getStepDelayMs();
+  const cutoff = new Date(Date.now() - stepDelayMs);
 
-  let processedCount = 0;
-  try {
-    // 1. Advance PICKING_PENDING -> PICKED
-    const pendingTask = await prisma.warehouseTask.findFirst({
-      where: { status: "PICKING_PENDING" },
-      orderBy: { createdAt: "asc" },
-    });
+  const task = await prisma.warehouseTask.findFirst({
+    where: {
+      automationMode: "AUTONOMOUS",
+      status: { in: ["PICKING_PENDING", "PICKED", "PACKED"] },
+      updatedAt: { lte: cutoff },
+    },
+    orderBy: { updatedAt: "asc" },
+  });
 
-    if (pendingTask) {
-      await prisma.warehouseTask.update({
-        where: { id: pendingTask.id },
-        data: { status: "PICKED" },
-      });
-      processedCount++;
-      console.log(`[warehouse-service] 🤖 Automated Task: ${pendingTask.id} PICKING_PENDING -> PICKED`);
-      return processedCount;
-    }
-
-    // 2. Advance PICKED -> PACKED
-    const pickedTask = await prisma.warehouseTask.findFirst({
-      where: { status: "PICKED" },
-      orderBy: { createdAt: "asc" },
-    });
-
-    if (pickedTask) {
-      await prisma.warehouseTask.update({
-        where: { id: pickedTask.id },
-        data: { status: "PACKED" },
-      });
-      processedCount++;
-      console.log(`[warehouse-service] 🤖 Automated Task: ${pickedTask.id} PICKED -> PACKED`);
-      return processedCount;
-    }
-
-    // 3. Advance PACKED -> PACKAGE_READY (with Transactional Outbox)
-    const packedTask = await prisma.warehouseTask.findFirst({
-      where: { status: "PACKED" },
-      orderBy: { createdAt: "asc" },
-    });
-
-    if (packedTask) {
-      await prisma.$transaction(async (tx) => {
-        const updated = await tx.warehouseTask.update({
-          where: { id: packedTask.id },
-          data: { status: "PACKAGE_READY" },
-        });
-
-        const packageReadyEvent = createEvent(
-          "PACKAGE_READY",
-          "warehouse-service",
-          {
-            taskId: updated.id,
-            productId: updated.productId,
-            warehouseId: updated.warehouseId,
-            quantity: updated.quantity,
-            weightKg: updated.weightKg,
-            serviceLevel: updated.serviceLevel,
-          },
-          updated.correlationId || undefined,
-          updated.sourceEventId || undefined
-        );
-
-        await tx.outboxEvent.create({
-          data: {
-            eventType: "PACKAGE_READY",
-            payload: JSON.stringify(packageReadyEvent),
-          },
-        });
-      });
-
-      processedCount++;
-      console.log(`[warehouse-service] 🤖 Automated Task: ${packedTask.id} PACKED -> PACKAGE_READY (Outbox Event Created)`);
-      return processedCount;
-    }
-  } catch (error) {
-    console.error("[warehouse-service] ❌ Error in warehouse task automation worker:", error);
+  if (!task) {
+    return 0;
   }
 
-  return processedCount;
+  const nextStatus = getNextWarehouseTaskStatus(task.status as WarehouseTaskStatus);
+  if (!nextStatus) {
+    return 0;
+  }
+
+  try {
+    const updated = await advanceWarehouseTaskById(task.id);
+    console.log(
+      `[warehouse-service] 🤖 Automated task ${updated.id}: ${task.status} -> ${updated.status}`,
+    );
+    return 1;
+  } catch (error) {
+    if (error instanceof TransitionConflictError) {
+      return 0;
+    }
+
+    console.error(
+      `[warehouse-service] ❌ Automation failed taskId=${task.id} current=${task.status} target=${nextStatus}:`,
+      error,
+    );
+    return 0;
+  }
 }
 
-export function startWarehouseAutomationWorker(intervalMs = 2500) {
-  if (isRunning) return;
+function schedulePoll(): void {
+  if (shouldStop) {
+    isRunning = false;
+    return;
+  }
+
+  pollTimer = setTimeout(() => {
+    void (async () => {
+      try {
+        await processAutomatedWarehouseTasksOnce();
+      } catch (error) {
+        console.error("[warehouse-service] ❌ Automation poll error:", error);
+      } finally {
+        schedulePoll();
+      }
+    })();
+  }, getPollIntervalMs());
+}
+
+export function startWarehouseAutomationWorker(): void {
+  if (isRunning) {
+    return;
+  }
+
   isRunning = true;
   shouldStop = false;
 
-  console.log(`[warehouse-service] 🤖 Warehouse Task Automation Worker started (Status: ${isAutomationEnabled ? "ACTIVE" : "PAUSED"})`);
+  console.log(
+    `[warehouse-service] 🤖 Warehouse automation worker started (poll=${getPollIntervalMs()}ms, stepDelay=${getStepDelayMs()}ms)`,
+  );
 
-  async function loop() {
-    if (shouldStop) {
-      isRunning = false;
-      return;
-    }
-
-    await processAutomatedWarehouseTasksOnce();
-
-    if (!shouldStop) {
-      setTimeout(loop, intervalMs);
-    } else {
-      isRunning = false;
-    }
-  }
-
-  void loop();
+  schedulePoll();
 }
 
-export function stopWarehouseAutomationWorker() {
+export function stopWarehouseAutomationWorker(): void {
   shouldStop = true;
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 }

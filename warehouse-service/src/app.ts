@@ -1,10 +1,12 @@
 import express from "express";
 import { prisma } from "./lib/prisma.js";
-import { createEvent } from "./events/event.js";
 import {
-  getWarehouseAutomationStatus,
-  setWarehouseAutomationStatus,
-} from "./services/automation.js";
+  InvalidTransitionError,
+  TaskNotFoundError,
+  TransitionConflictError,
+  transitionWarehouseTaskStatus,
+  type WarehouseTaskStatus,
+} from "./services/taskTransitions.js";
 
 export const app = express();
 
@@ -28,17 +30,6 @@ app.get("/health", async (_req, res) => {
   } catch {
     res.status(503).json({ service: "warehouse-service", status: "error", database: "disconnected" });
   }
-});
-
-app.get("/automation/status", (_req, res) => {
-  res.json({ service: "warehouse-service", enabled: getWarehouseAutomationStatus() });
-});
-
-app.post("/automation/toggle", (req, res) => {
-  const current = getWarehouseAutomationStatus();
-  const nextState = typeof req.body.enabled === "boolean" ? req.body.enabled : !current;
-  const updated = setWarehouseAutomationStatus(nextState);
-  res.json({ service: "warehouse-service", enabled: updated });
 });
 
 app.get("/tasks", async (_req, res) => {
@@ -78,72 +69,35 @@ app.patch("/tasks/:id/status", async (req, res) => {
     const allowedStatuses = ["PICKING_PENDING", "PICKED", "PACKED", "PACKAGE_READY"];
 
     if (!status || !allowedStatuses.includes(status)) {
-      return res.status(400).json({ message: `Invalid status. Allowed values: ${allowedStatuses.join(", ")}` });
+      return res.status(400).json({
+        message: `Invalid status. Allowed values: ${allowedStatuses.join(", ")}`,
+      });
     }
 
-    const task = await prisma.warehouseTask.findUnique({
-      where: { id: req.params.id },
-    });
+    const updatedTask = await transitionWarehouseTaskStatus(
+      req.params.id,
+      status as WarehouseTaskStatus,
+    );
 
-    if (!task) {
+    if (updatedTask.status === "PACKAGE_READY") {
+      console.log(
+        `[warehouse-service] 🚚 Task ${updatedTask.id} transitioned to PACKAGE_READY. Outbox record created.`,
+      );
+    }
+
+    return res.json(updatedTask);
+  } catch (error) {
+    if (error instanceof TaskNotFoundError) {
       return res.status(404).json({ message: "Warehouse task not found" });
     }
-
-    const validTransition =
-      (task.status === "PICKING_PENDING" && status === "PICKED") ||
-      (task.status === "PICKED" && status === "PACKED") ||
-      (task.status === "PACKED" && status === "PACKAGE_READY");
-
-    if (!validTransition) {
-      return res.status(400).json({
-        message: `Invalid status transition from ${task.status} to ${status}`,
-      });
+    if (error instanceof InvalidTransitionError) {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error instanceof TransitionConflictError) {
+      return res.status(409).json({ message: "Task status was updated by another process" });
     }
 
-    if (status === "PACKAGE_READY") {
-      // Transactional Outbox Pattern
-      const updatedTask = await prisma.$transaction(async (tx) => {
-        const updated = await tx.warehouseTask.update({
-          where: { id: req.params.id },
-          data: { status },
-        });
-
-        const packageReadyEvent = createEvent(
-          "PACKAGE_READY",
-          "warehouse-service",
-          {
-            taskId: updated.id,
-            productId: updated.productId,
-            warehouseId: updated.warehouseId,
-            quantity: updated.quantity,
-            weightKg: updated.weightKg,
-            serviceLevel: updated.serviceLevel,
-          },
-          updated.correlationId || undefined,
-          updated.sourceEventId || undefined
-        );
-
-        await tx.outboxEvent.create({
-          data: {
-            eventType: "PACKAGE_READY",
-            payload: JSON.stringify(packageReadyEvent),
-          },
-        });
-
-        return updated;
-      });
-
-      console.log(`[warehouse-service] 🚚 Task ${updatedTask.id} transitioned to PACKAGE_READY. Outbox record created.`);
-      return res.json(updatedTask);
-    } else {
-      const updatedTask = await prisma.warehouseTask.update({
-        where: { id: req.params.id },
-        data: { status },
-      });
-      return res.json(updatedTask);
-    }
-  } catch (error) {
     console.error("Failed to update task status:", error);
-    res.status(500).json({ message: "Failed to update warehouse task status" });
+    return res.status(500).json({ message: "Failed to update warehouse task status" });
   }
 });

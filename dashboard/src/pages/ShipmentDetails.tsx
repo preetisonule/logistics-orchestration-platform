@@ -6,7 +6,7 @@ import {
   Snackbar,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   fetchShipmentByTrackingNumber,
@@ -16,6 +16,7 @@ import { getErrorMessage } from "../api/axios";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
 import { ShipmentStatusControl } from "../components/shipments/ShipmentStatus";
+import { usePolling } from "../hooks/usePolling";
 import { ShipmentTimeline } from "../components/shipments/ShipmentTimeline";
 import type { Shipment, ShipmentStatus } from "../types/shipment";
 import { formatDateTime, formatStatusLabel } from "../utils/statusHelpers";
@@ -28,6 +29,7 @@ export function ShipmentDetailsPage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [shipment, setShipment] = useState<Shipment | null>(null);
+  const hasLoadedRef = useRef(false);
   const [updating, setUpdating] = useState(false);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -35,29 +37,35 @@ export function ShipmentDetailsPage() {
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
 
-  const loadShipment = useCallback(async () => {
+  const loadShipment = useCallback(async (isInitial = false) => {
     if (!trackingNumber) {
       setErrorMessage("Tracking number is required.");
       setLoadState("error");
       return;
     }
 
-    setLoadState("loading");
-    setErrorMessage("");
+    if (isInitial) {
+      setLoadState("loading");
+      setErrorMessage("");
+    }
 
     try {
       const data = await fetchShipmentByTrackingNumber(trackingNumber);
       setShipment(data);
       setLoadState("success");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "Failed to load shipment details."));
-      setLoadState("error");
+      if (isInitial) {
+        setErrorMessage(getErrorMessage(error, "Failed to load shipment details."));
+        setLoadState("error");
+      }
     }
   }, [trackingNumber]);
 
-  useEffect(() => {
-    void loadShipment();
-  }, [loadShipment]);
+  usePolling(async () => {
+    const isInitial = !hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    await loadShipment(isInitial);
+  }, 4000, Boolean(trackingNumber));
 
   const handleStatusUpdate = async (status: ShipmentStatus) => {
     if (!trackingNumber || !shipment) {
@@ -95,7 +103,7 @@ export function ShipmentDetailsPage() {
         message={errorMessage || "Shipment not found."}
         onRetry={() => {
           if (trackingNumber) {
-            void loadShipment();
+            void loadShipment(true);
           } else {
             navigate("/shipments");
           }
@@ -173,11 +181,17 @@ export function ShipmentDetailsPage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 5 }}>
-          <ShipmentStatusControl
-            status={shipment.status}
-            onUpdate={handleStatusUpdate}
-            updating={updating}
-          />
+          {shipment.automationMode === "AUTONOMOUS" ? (
+            <Alert severity="info">
+              Automatic transit is active. Shipment status is controlled by the backend worker.
+            </Alert>
+          ) : (
+            <ShipmentStatusControl
+              status={shipment.status}
+              onUpdate={handleStatusUpdate}
+              updating={updating}
+            />
+          )}
         </Grid>
       </Grid>
 

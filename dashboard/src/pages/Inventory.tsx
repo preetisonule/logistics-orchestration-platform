@@ -22,12 +22,14 @@ import { EmptyState } from "../components/common/EmptyState";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
 import { InventoryTable } from "../components/inventory/InventoryTable";
+import { useAutomationPipelineMode } from "../context/AutomationPipelineContext";
 import type { InventoryRow } from "../types/inventory";
 import { getInventoryStatus } from "../utils/statusHelpers";
 
 type LoadState = "loading" | "success" | "empty" | "error";
 
 export function InventoryPage() {
+  const { mode } = useAutomationPipelineMode();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [rows, setRows] = useState<InventoryRow[]>([]);
@@ -115,10 +117,14 @@ export function InventoryPage() {
       await reserveInventory(selectedRow.id, {
         quantity: parsedQuantity,
         serviceLevel,
+        automationMode: mode,
       });
       setSnackbar({
         open: true,
-        message: `Reserved ${parsedQuantity} units of ${selectedRow.productName} (${serviceLevel} delivery). Workflow initialized.`,
+        message:
+          mode === "AUTONOMOUS"
+            ? `Inventory reserved. Autonomous fulfillment pipeline started for ${parsedQuantity} units of ${selectedRow.productName}.`
+            : `Inventory reserved. Warehouse task created. Manual processing required for ${parsedQuantity} units of ${selectedRow.productName}.`,
         severity: "success",
       });
       setSelectedRow(null);
