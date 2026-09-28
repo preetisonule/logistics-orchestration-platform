@@ -1,25 +1,56 @@
 services:
   postgres:
     ports: !reset []
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}
 
   kafka:
     ports: !reset []
 
   inventory-service:
     ports: !reset []
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}@postgres:5432/inventory_db
+      KAFKA_BROKER: kafka:9092
 
   warehouse-service:
     ports: !reset []
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}@postgres:5432/warehouse_db
+      KAFKA_BROKER: kafka:9092
 
   carrier-selection-service:
     ports: !reset []
+    environment:
+      PORT: 3003
+      KAFKA_BROKER: kafka:9092
 
   shipment-service:
     ports: !reset []
+    environment:
+      PORT: 3004
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}@postgres:5432/shipment_db
+      KAFKA_BROKER: kafka:9092
 
   event-service:
     ports: !reset []
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for production}@postgres:5432/event_db
+      KAFKA_BROKER: kafka:9092
 
   dashboard:
     ports:
       - "80:80"
+    depends_on:
+      inventory-service:
+        condition: service_healthy
+      warehouse-service:
+        condition: service_healthy
+      shipment-service:
+        condition: service_healthy
+      event-service:
+        condition: service_healthy
