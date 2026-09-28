@@ -23,21 +23,31 @@ From the Codespaces terminal:
 
     cd /workspaces/logistics-orchestration-platform
     printf 'POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=codespace-demo-password\n' > .env
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+    docker compose -f docker-compose.yml -f docker-compose.codespaces.yml config
+    docker compose -f docker-compose.yml -f docker-compose.codespaces.yml up -d --build
+
+The Codespaces override uses Docker host networking. This is intentional: nested Docker inside Codespaces can resolve service names on user-defined bridge networks while TCP traffic between sibling containers still fails. Using host networking makes the services communicate through localhost instead of the broken user-defined bridge path. urlRelevant Codespaces networking discussionhttps://github.com/orgs/community/discussions/208098
 
 The .env file is local to the Codespace and must not be committed.
 
 ## Verify
 
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+    docker compose -f docker-compose.yml -f docker-compose.codespaces.yml ps
 
 Inspect logs if needed:
 
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100
+    docker compose -f docker-compose.yml -f docker-compose.codespaces.yml logs --tail=100
+
+Health endpoints are available on the Codespace host at:
+- inventory: http://127.0.0.1:3000/health
+- warehouse: http://127.0.0.1:3002/health
+- carrier selection: http://127.0.0.1:3003/health
+- shipment: http://127.0.0.1:3004/health
+- event store: http://127.0.0.1:3005/health
 
 ## Open the dashboard
 
-The production dashboard runs on port 80 inside the Codespace.
+The dashboard listens on port 80 inside the Codespace.
 
 In the VS Code PORTS panel:
 1. Find port 80.
@@ -93,3 +103,5 @@ Code changes are committed and pushed normally:
     git push
 
 Codespaces does not automatically redeploy every GitHub push like Vercel. For changes made in the current Codespace, rebuild/restart the Compose stack after pulling the latest code.
+
+For normal Docker environments, keep using docker-compose.yml together with the production overlay. The Codespaces host-network override is deployment-specific.
