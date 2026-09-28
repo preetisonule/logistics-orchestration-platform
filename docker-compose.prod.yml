@@ -1,0 +1,25 @@
+services:
+  postgres:
+    ports: !reset []
+
+  kafka:
+    ports: !reset []
+
+  inventory-service:
+    ports: !reset []
+
+  warehouse-service:
+    ports: !reset []
+
+  carrier-selection-service:
+    ports: !reset []
+
+  shipment-service:
+    ports: !reset []
+
+  event-service:
+    ports: !reset []
+
+  dashboard:
+    ports:
+      - "80:80"

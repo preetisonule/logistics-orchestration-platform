@@ -142,5 +142,14 @@ services:
       timeout: 5s
       retries: 5
 
+  dashboard:
+    build: ./dashboard
+    container_name: logistics-dashboard
+    depends_on:
+      - inventory-service
+      - warehouse-service
+      - shipment-service
+      - event-service
+
 volumes:
   postgres_data:
