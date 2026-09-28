@@ -1,98 +1,95 @@
-# Production Deployment
+# Running the Platform with GitHub Codespaces
 
-This project runs as one Docker Compose stack on a Linux VM.
+This project can be run as a complete Docker Compose stack inside a GitHub Codespace.
 
-## Production topology
+## Why Codespaces
 
-- Nginx/React dashboard: public HTTP port 80
-- Inventory, Warehouse, Carrier Selection, Shipment, and Event Store: Docker-internal
-- Kafka: Docker-internal
-- PostgreSQL: Docker-internal
+The repository contains Kafka consumers, PostgreSQL, and background automation workers. Codespaces lets us run the existing Docker Compose architecture without splitting services across different hosting platforms.
 
-## First-time server setup
+GitHub personal accounts currently include 120 Codespaces core-hours and 15 GB-month of Codespaces storage on the Free plan. Usage beyond the included quota is blocked when no payment method is configured.
 
-Install Docker and Git on the VM, then clone the repository:
+## Start a Codespace
 
-```bash
-git clone https://github.com/preetisonule/logistics-orchestration-platform.git
-cd logistics-orchestration-platform
-```
+On the repository page:
+1. Click Code.
+2. Open the Codespaces tab.
+3. Click Create codespace on main.
 
-Create a server-side `.env` file. Do not commit it:
+Use a machine size that can run the full stack. The project contains Kafka, PostgreSQL, six application containers, and background workers.
 
-```env
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=CHANGE_ME_TO_A_LONG_URL_SAFE_PASSWORD
-```
+## Start the complete application
 
-Use a password containing letters and numbers (and other URL-safe characters) because it is embedded in PostgreSQL connection URLs.
+From the Codespaces terminal:
 
-Start production:
+    cd /workspaces/logistics-orchestration-platform
+    printf 'POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=codespace-demo-password\n' > .env
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
+The .env file is local to the Codespace and must not be committed.
 
-Verify:
+## Verify
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-curl http://127.0.0.1/
-```
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 
-The public application is available at:
+Inspect logs if needed:
 
-```
-http://<VM_PUBLIC_IP>
-```
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100
 
-## Automatic deployment
+## Open the dashboard
 
-The repository contains a GitHub Actions workflow:
+The production dashboard runs on port 80 inside the Codespace.
 
-`.github/workflows/deploy.yml`
+In the VS Code PORTS panel:
+1. Find port 80.
+2. Change its visibility to Public.
+3. Copy the forwarded URL.
 
-Every push to `main` can deploy the latest commit to the VM.
+GitHub provides a forwarded URL ending in .app.github.dev for a public port.
 
-Configure these GitHub repository secrets:
+## Seed demo data
 
-- `DEPLOY_HOST` — VM public IP or hostname
-- `DEPLOY_USER` — Linux SSH user
-- `DEPLOY_SSH_KEY` — private SSH key for that VM
-- `DEPLOY_KNOWN_HOSTS` — pinned SSH host key entry
-- `DEPLOY_PATH` — e.g. `/opt/logistics-orchestration-platform`
+From the repository root:
 
-The VM must have Docker permissions for `DEPLOY_USER`.
+    node scripts/seed-demo.mjs
 
-The VM also needs the production `.env` file. GitHub Actions does not store or overwrite that server-side secret.
+Then open the dashboard and run a workflow.
 
-Deployment flow:
+## Recommended demo
 
-```
-git push
-   ↓
-GitHub Actions
-   ↓
-SSH to VM
-   ↓
-git fetch/reset origin/main
-   ↓
-docker compose up -d --build
-   ↓
-new version live
-```
+Set Autonomous Pipeline Mode to ON and reserve inventory.
 
-## Important
+The backend should progress asynchronously:
 
-Do not expose these ports publicly in the cloud:
+    PICKING_PENDING
+      ↓
+    PICKED
+      ↓
+    PACKED
+      ↓
+    PACKAGE_READY
+      ↓
+    CARRIER_SELECTED
+      ↓
+    CREATED
+      ↓
+    IN_TRANSIT
+      ↓
+    OUT_FOR_DELIVERY
+      ↓
+    DELIVERED
 
-- 3000
-- 3002
-- 3003
-- 3004
-- 3005
-- 5433
-- 9092
-- 9094
+## Important limitation
 
-Only port 80 is required for the application.
+A Codespace is a cloud development environment, not a permanent 24/7 production server. The public forwarded URL depends on the Codespace and services remaining available, and Codespaces usage is subject to GitHub's monthly quota.
+
+For a long-lived deployment later, move the same Docker Compose stack to a persistent VM or container host.
+
+## Development flow
+
+Code changes are committed and pushed normally:
+
+    git add .
+    git commit -m "change"
+    git push
+
+Codespaces does not automatically redeploy every GitHub push like Vercel. For changes made in the current Codespace, rebuild/restart the Compose stack after pulling the latest code.
